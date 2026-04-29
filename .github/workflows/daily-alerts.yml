@@ -3,8 +3,7 @@ name: Daily Trading Alerts
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * 1-5'
-      timezone: 'Europe/Rome'
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
