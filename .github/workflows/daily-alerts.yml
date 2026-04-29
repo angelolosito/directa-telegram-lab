@@ -1,12 +1,9 @@
 name: Daily Trading Alerts
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '15 16 * * 1-5'
 permissions:
   contents: write
 
