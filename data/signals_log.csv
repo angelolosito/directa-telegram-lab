@@ -1,2 +1,3 @@
 date,symbol,name,instrument_type,action,strategy,price,entry,stop,target,reward_risk,qty,notional,estimated_round_trip_cost,reason
 2026-04-29,ENI.MI,Eni,stock,BUY,trend_pullback,23.605,23.605,22.15,26.515,2.0,17,401.29,3.0,"Trend primario positivo, recente pullback verso medie brevi/intermedie, recupero sopra SMA20 e RSI in area non eccessivamente tirata."
+2026-04-29,ENI.MI,Eni,stock,WATCH,trend_pullback,23.645,23.645,22.15,26.635,2.0,16,378.32,3.0,"Trend primario positivo, recente pullback verso medie brevi/intermedie, recupero sopra SMA20 e RSI in area non eccessivamente tirata. Segnale non eseguito in paper: Esiste già una posizione aperta su questo strumento."
