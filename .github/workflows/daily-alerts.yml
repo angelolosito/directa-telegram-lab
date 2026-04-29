@@ -1,0 +1,49 @@
+name: Daily Trading Alerts
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 18 * * 1-5'
+      timezone: 'Europe/Rome'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-trading-alerts
+  cancel-in-progress: true
+
+jobs:
+  run-alerts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run trading lab
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
+
+      - name: Commit updated paper state and reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/ data/ reports/
+          if git diff --staged --quiet; then
+            echo "No state changes to commit."
+          else
+            git commit -m "Update trading lab state [skip ci]"
+            git push
+          fi

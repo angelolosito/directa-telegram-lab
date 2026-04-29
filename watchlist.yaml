@@ -1,0 +1,66 @@
+# Ticker in formato Yahoo Finance. Per Borsa Italiana usa spesso suffisso .MI.
+watchlist:
+  - symbol: SWDA.MI
+    name: iShares Core MSCI World UCITS ETF
+    type: etf
+    enabled: true
+
+  - symbol: CSSPX.MI
+    name: iShares Core S&P 500 UCITS ETF
+    type: etf
+    enabled: true
+
+  - symbol: EQQQ.MI
+    name: Invesco EQQQ Nasdaq-100 UCITS ETF
+    type: etf
+    enabled: true
+
+  - symbol: EIMI.MI
+    name: iShares Core MSCI Emerging Markets IMI UCITS ETF
+    type: etf
+    enabled: true
+
+  - symbol: EXW1.MI
+    name: iShares Core EURO STOXX 50 UCITS ETF
+    type: etf
+    enabled: true
+
+  - symbol: ENEL.MI
+    name: Enel
+    type: stock
+    enabled: true
+
+  - symbol: ENI.MI
+    name: Eni
+    type: stock
+    enabled: true
+
+  - symbol: ISP.MI
+    name: Intesa Sanpaolo
+    type: stock
+    enabled: true
+
+  - symbol: UCG.MI
+    name: UniCredit
+    type: stock
+    enabled: true
+
+  - symbol: LDO.MI
+    name: Leonardo
+    type: stock
+    enabled: true
+
+  - symbol: RACE.MI
+    name: Ferrari
+    type: stock
+    enabled: true
+
+  - symbol: STLAM.MI
+    name: Stellantis
+    type: stock
+    enabled: true
+
+  - symbol: G.MI
+    name: Assicurazioni Generali
+    type: stock
+    enabled: true

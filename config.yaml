@@ -1,0 +1,47 @@
+project:
+  name: Directa Telegram Trading Lab
+  timezone: Europe/Rome
+  currency: EUR
+
+run:
+  lookback_days: 520
+  min_rows_required: 60
+  save_reports: true
+  send_telegram: true
+  dry_run_default: false
+
+risk:
+  initial_capital: 1000.0
+  risk_per_trade: 25.0
+  monthly_loss_limit: 100.0
+  max_open_positions: 2
+  max_allocation_per_trade: 500.0
+  min_reward_risk: 2.0
+  max_holding_days: 45
+
+strategy:
+  enabled:
+    trend_pullback: true
+    controlled_breakout: true
+  rsi_min_pullback: 40
+  rsi_max_pullback: 68
+  rsi_max_breakout: 75
+  breakout_lookback_days: 20
+  volume_breakout_multiplier: 1.10
+  pullback_lookback_days: 8
+  atr_stop_multiplier: 1.50
+  breakout_atr_stop_multiplier: 2.00
+  trailing_atr_multiplier: 2.00
+
+costs:
+  broker: Directa
+  # Modello indicativo del profilo variabile Italia: 1,9 per mille, minimo 1,50 €, massimo 18 €.
+  # Aggiorna questi valori se usi un profilo commissionale diverso.
+  variable_rate: 0.0019
+  min_commission: 1.50
+  max_commission: 18.00
+
+paths:
+  database: state/trading_lab.sqlite
+  reports_dir: reports
+  signals_csv: data/signals_log.csv
