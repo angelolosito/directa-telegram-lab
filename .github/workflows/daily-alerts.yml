@@ -3,6 +3,9 @@ name: Daily Trading Alerts
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   run-alerts:
     runs-on: ubuntu-latest
