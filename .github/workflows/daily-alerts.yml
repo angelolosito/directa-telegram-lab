@@ -2,14 +2,6 @@ name: Daily Trading Alerts
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '15 16 * * 1-5'
-permissions:
-  contents: write
-
-concurrency:
-  group: daily-trading-alerts
-  cancel-in-progress: true
 
 jobs:
   run-alerts:
