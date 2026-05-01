@@ -78,6 +78,7 @@ def build_daily_message(
     summary: dict,
     errors: list[str],
     dry_run: bool = False,
+    market_regime: dict | None = None,
 ) -> str:
     lines: list[str] = [
         f"📊 <b>Directa Telegram Trading Lab</b>",
@@ -85,6 +86,25 @@ def build_daily_message(
     ]
     if dry_run:
         lines.append("Modalità: DRY-RUN, nessuna modifica salvata.")
+    if market_regime and market_regime.get("enabled"):
+        allowed = "sì" if market_regime.get("new_positions_allowed") else "no"
+        lines.extend(
+            [
+                "",
+                "<b>Regime di mercato</b>",
+                f"Stato: {market_regime.get('state', 'n/d')}",
+                f"Soglia score attiva: {_format_optional_float(market_regime.get('active_min_signal_score'), 1)}/100",
+                f"Nuovi ingressi permessi: {allowed}",
+                str(market_regime.get("reason", "")),
+            ]
+        )
+        benchmarks = market_regime.get("benchmarks") or []
+        for benchmark in benchmarks[:3]:
+            change_20d = _format_optional_float(benchmark.get("change_20d_pct"), 2)
+            lines.append(
+                f"- {benchmark.get('symbol')}: {benchmark.get('state')} "
+                f"(20 sedute {change_20d}%)"
+            )
     lines.extend(
         [
             "",

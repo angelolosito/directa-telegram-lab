@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 
-from .costs import estimate_commission, estimate_round_trip_cost
+from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
+from .market_regime import evaluate_market_regime
 from .strategy import Signal, analyze_buy_signals, score_signal
 
 
@@ -53,6 +54,7 @@ class BacktestResult:
     open_positions: list[BacktestPosition]
     errors: list[str]
     equity_curve: list[dict]
+    regime_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def closed_trades(self) -> int:
@@ -134,7 +136,7 @@ def _size_signal(signal: Signal, cash: float, risk_cfg: dict, costs_cfg: dict) -
     risk_per_trade = float(risk_cfg.get("risk_per_trade", 25.0))
     max_allocation = float(risk_cfg.get("max_allocation_per_trade", 500.0))
     qty_by_risk = int(risk_per_trade // unit_risk)
-    qty_by_allocation = int(min(max_allocation, cash) // signal.entry)
+    qty_by_allocation = max_affordable_quantity(signal.entry, cash, max_allocation, costs_cfg)
     qty = max(0, min(qty_by_risk, qty_by_allocation))
 
     signal.qty = qty
@@ -175,6 +177,7 @@ def run_backtest(
     watchlist: list[dict],
     market_data: dict[str, pd.DataFrame],
     config: dict,
+    regime_data: dict[str, pd.DataFrame] | None = None,
 ) -> BacktestResult:
     risk_cfg = config["risk"]
     costs_cfg = config["costs"]
@@ -188,6 +191,7 @@ def run_backtest(
     trades: list[BacktestTrade] = []
     equity_curve: list[dict] = []
     errors: list[str] = []
+    regime_counts: dict[str, int] = {}
     last_stop_by_symbol: dict[str, date] = {}
     trades_by_month: dict[str, int] = {}
 
@@ -214,6 +218,7 @@ def run_backtest(
             open_positions=[],
             errors=["Nessun dato di mercato disponibile per il backtest."],
             equity_curve=[],
+            regime_counts={},
         )
 
     instruments_by_symbol = {item["symbol"]: item for item in watchlist}
@@ -221,6 +226,10 @@ def run_backtest(
     for day_ts in dates:
         day = day_ts.date()
         month_key = day.strftime("%Y-%m")
+        market_regime = evaluate_market_regime(regime_data or {}, config, min_signal_score, day)
+        active_min_signal_score = market_regime.active_min_signal_score
+        if market_regime.enabled:
+            regime_counts[market_regime.state] = regime_counts.get(market_regime.state, 0) + 1
 
         remaining_positions: list[BacktestPosition] = []
         for pos in positions:
@@ -280,7 +289,11 @@ def run_backtest(
         candidates: list[Signal] = []
         open_symbols = {pos.symbol for pos in positions}
 
-        if month_pnl > -monthly_loss_limit and len(positions) < max_open_positions:
+        if (
+            market_regime.new_positions_allowed
+            and month_pnl > -monthly_loss_limit
+            and len(positions) < max_open_positions
+        ):
             for symbol, df in market_data.items():
                 if symbol in open_symbols or day_ts not in df.index:
                     continue
@@ -301,7 +314,7 @@ def run_backtest(
                     signal = score_signal(signal, strategy_cfg)
                     if signal.qty <= 0:
                         continue
-                    if signal.score is not None and signal.score < min_signal_score:
+                    if signal.score is not None and signal.score < active_min_signal_score:
                         continue
                     candidates.append(signal)
 
@@ -349,6 +362,7 @@ def run_backtest(
                 "equity": _estimate_equity(cash, positions, market_data, day_ts, costs_cfg),
                 "cash": round(cash, 2),
                 "open_positions": len(positions),
+                "market_regime": market_regime.state,
             }
         )
 
@@ -377,6 +391,7 @@ def run_backtest(
         open_positions=positions,
         errors=errors,
         equity_curve=equity_curve,
+        regime_counts=regime_counts,
     )
 
 
@@ -401,6 +416,11 @@ def format_backtest_report(result: BacktestResult) -> str:
         f"P/L medio per trade: {result.avg_trade_pnl if result.avg_trade_pnl is not None else 'n/d'} EUR",
         f"Posizioni ancora aperte: {len(result.open_positions)}",
     ]
+
+    if result.regime_counts:
+        lines.extend(["", "## Regime di mercato", ""])
+        for state, count in sorted(result.regime_counts.items()):
+            lines.append(f"- {state}: {count} sedute")
 
     if result.trades:
         lines.extend(["", "## Ultimi trade", ""])

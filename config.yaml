@@ -20,6 +20,19 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+market_regime:
+  enabled: true
+  lookback_days: 360
+  min_rows_required: 220
+  neutral_score_boost: 5
+  risk_off_score_boost: 15
+  block_new_positions_when_risk_off: true
+  benchmarks:
+    - symbol: SWDA.MI
+      name: iShares Core MSCI World UCITS ETF
+    - symbol: CSSPX.MI
+      name: iShares Core S&P 500 UCITS ETF
+
 risk:
   initial_capital: 1000.0
   risk_per_trade: 25.0

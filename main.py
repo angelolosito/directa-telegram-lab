@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
 from src.data_provider import DataProviderError, fetch_daily_data
+from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.paper_portfolio import PaperPortfolio
 from src.report import build_daily_message, save_markdown_report
 from src.strategy import Signal, analyze_buy_signals, score_signal
@@ -81,6 +82,54 @@ def append_signals_csv(path: Path, signals: list[Signal]) -> None:
             )
 
 
+def fetch_market_regime_data(
+    cfg: dict,
+    known_market_data: dict,
+    timezone: str,
+    lookback_days: int,
+    request_timeout: int,
+    download_retries: int,
+    process_timeout: int,
+) -> tuple[dict, list[str]]:
+    regime_data = {}
+    errors: list[str] = []
+    benchmarks = configured_benchmarks(cfg)
+    if not benchmarks:
+        return regime_data, errors
+
+    regime_cfg = cfg.get("market_regime", {})
+    regime_lookback_days = int(regime_cfg.get("lookback_days", max(lookback_days, 320)))
+    min_rows = int(regime_cfg.get("min_rows_required", 220))
+
+    for benchmark in benchmarks:
+        symbol = benchmark["symbol"]
+        if symbol in known_market_data:
+            df = known_market_data[symbol]
+            if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
+                errors.append(f"{symbol}: storico insufficiente per filtro regime mercato.")
+            else:
+                regime_data[symbol] = df
+            continue
+        try:
+            df = fetch_daily_data(
+                symbol,
+                lookback_days=regime_lookback_days,
+                timezone=timezone,
+                request_timeout=request_timeout,
+                retries=download_retries,
+                process_timeout=process_timeout,
+            )
+            if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
+                errors.append(f"{symbol}: storico insufficiente per filtro regime mercato.")
+                continue
+            regime_data[symbol] = df
+        except DataProviderError as e:
+            errors.append(str(e))
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{symbol}: errore imprevisto nel filtro regime mercato: {e}")
+    return regime_data, errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Directa Telegram Trading Lab")
     parser.add_argument("--base-dir", default=".", help="Project base directory")
@@ -137,7 +186,18 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{symbol}: errore imprevisto: {e}")
 
-        result = run_backtest(watchlist, market_data, cfg)
+        regime_data, regime_errors = fetch_market_regime_data(
+            cfg,
+            market_data,
+            timezone,
+            lookback_days,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(regime_errors)
+
+        result = run_backtest(watchlist, market_data, cfg, regime_data=regime_data)
         result.errors.extend(errors)
         report = format_backtest_report(result)
         if cfg["run"].get("save_reports", True):
@@ -188,6 +248,19 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{symbol}: errore imprevisto: {e}")
 
+        regime_data, regime_errors = fetch_market_regime_data(
+            cfg,
+            market_data,
+            timezone,
+            lookback_days,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(regime_errors)
+        market_regime = evaluate_market_regime(regime_data, cfg, min_signal_score, today)
+        min_signal_score = market_regime.active_min_signal_score
+
         close_and_trail_events = portfolio.update_open_positions(market_data, today)
         close_events = [e for e in close_and_trail_events if e.get("type") == "CLOSE"]
         trail_events = [e for e in close_and_trail_events if e.get("type") == "TRAIL_UPDATE"]
@@ -209,6 +282,14 @@ def main() -> int:
                 if signal.qty <= 0:
                     signal.action = "WATCH"
                     signal.reason += " Segnale non eseguito in paper: capitale/size non sufficiente con i limiti attuali."
+                    all_logged_signals.append(signal)
+                    continue
+                if not market_regime.new_positions_allowed:
+                    signal.action = "WATCH"
+                    signal.reason += (
+                        " Segnale non eseguito in paper: filtro regime mercato in difesa. "
+                        f"{market_regime.reason}"
+                    )
                     all_logged_signals.append(signal)
                     continue
                 if signal.score is not None and signal.score < min_signal_score:
@@ -258,6 +339,7 @@ def main() -> int:
             summary=summary,
             errors=errors,
             dry_run=dry_run,
+            market_regime=market_regime.to_dict(),
         )
 
         if cfg["run"].get("save_reports", True) and not dry_run:

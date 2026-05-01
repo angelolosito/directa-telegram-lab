@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.backtest import run_backtest
+from src.market_regime import evaluate_market_regime
 from src.paper_portfolio import PaperPortfolio
 from src.strategy import Signal, score_signal
 
@@ -90,6 +91,29 @@ class RiskControlTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertIn("Cooldown post-stop", reason)
 
+    def test_position_size_reserves_entry_commission(self) -> None:
+        cfg = sample_config()
+        cfg["risk"]["initial_capital"] = 101.0
+        with TemporaryDirectory() as tmp:
+            portfolio = PaperPortfolio(Path(tmp) / "lab.sqlite", cfg)
+            signal = Signal(
+                symbol="TEST.MI",
+                name="Test",
+                instrument_type="stock",
+                action="BUY",
+                strategy="trend_pullback",
+                date="2026-05-01",
+                price=100.0,
+                entry=100.0,
+                stop=90.0,
+                target=120.0,
+                reward_risk=2.0,
+            )
+            sized = portfolio.size_signal(signal)
+            portfolio.close()
+
+        self.assertEqual(sized.qty, 0)
+
     def test_signal_score_includes_cost_penalty(self) -> None:
         cfg = sample_config()
         signal = Signal(
@@ -121,6 +145,31 @@ class RiskControlTests(unittest.TestCase):
         self.assertIsNotNone(scored.score)
         self.assertLess(scored.score or 0, 100)
         self.assertIn("costi", scored.score_details)
+
+
+class MarketRegimeTests(unittest.TestCase):
+    def test_risk_off_regime_blocks_new_positions(self) -> None:
+        cfg = sample_config()
+        cfg["market_regime"] = {
+            "enabled": True,
+            "block_new_positions_when_risk_off": True,
+            "benchmarks": [{"symbol": "BENCH.MI", "name": "Benchmark"}],
+        }
+        dates = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+        benchmark = pd.DataFrame(
+            {
+                "Close": [90.0, 91.0, 92.0],
+                "SMA50": [95.0, 95.0, 95.0],
+                "SMA200": [100.0, 100.0, 100.0],
+            },
+            index=dates,
+        )
+
+        regime = evaluate_market_regime({"BENCH.MI": benchmark}, cfg, 60.0, date(2026, 1, 3))
+
+        self.assertEqual(regime.state, "risk_off")
+        self.assertFalse(regime.new_positions_allowed)
+        self.assertEqual(regime.active_min_signal_score, 75.0)
 
 
 class BacktestTests(unittest.TestCase):
@@ -182,6 +231,77 @@ class BacktestTests(unittest.TestCase):
         self.assertEqual(result.closed_trades, 1)
         self.assertEqual(result.trades[0].exit_reason, "target_reached")
         self.assertGreater(result.trades[0].net_pnl, 0)
+
+    def test_backtest_respects_risk_off_market_regime(self) -> None:
+        cfg = sample_config()
+        cfg["market_regime"] = {
+            "enabled": True,
+            "block_new_positions_when_risk_off": True,
+            "benchmarks": [{"symbol": "BENCH.MI", "name": "Benchmark"}],
+        }
+        dates = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+        df = pd.DataFrame(
+            {
+                "Open": [10.0, 10.2, 11.0],
+                "High": [10.1, 11.2, 11.4],
+                "Low": [9.9, 10.0, 10.8],
+                "Close": [10.0, 11.0, 11.2],
+                "SMA20": [9.5, 9.6, 9.7],
+                "SMA50": [9.0, 9.1, 9.2],
+                "SMA200": [8.0, 8.1, 8.2],
+                "RSI14": [55.0, 58.0, 60.0],
+                "ATR14": [0.3, 0.3, 0.3],
+                "Volume": [1000, 1100, 1200],
+                "VOL20": [900, 950, 1000],
+                "HIGH20_PREV": [10.0, 10.1, 11.2],
+            },
+            index=dates,
+        )
+        benchmark = pd.DataFrame(
+            {
+                "Close": [90.0, 91.0, 92.0],
+                "SMA50": [95.0, 95.0, 95.0],
+                "SMA200": [100.0, 100.0, 100.0],
+            },
+            index=dates,
+        )
+
+        def fake_analyze(instrument, df_slice, strategy_cfg, today):  # noqa: ARG001
+            return [
+                Signal(
+                    symbol="TEST.MI",
+                    name="Test",
+                    instrument_type="stock",
+                    action="BUY",
+                    strategy="trend_pullback",
+                    date=today.isoformat(),
+                    price=10.0,
+                    entry=10.0,
+                    stop=9.5,
+                    target=11.0,
+                    reward_risk=2.0,
+                    meta={
+                        "close": 10.0,
+                        "sma50": 9.0,
+                        "sma200": 8.0,
+                        "rsi14": 55.0,
+                        "volume": 1000,
+                        "vol20": 900,
+                    },
+                )
+            ]
+
+        with patch("src.backtest.analyze_buy_signals", side_effect=fake_analyze):
+            result = run_backtest(
+                watchlist=[{"symbol": "TEST.MI", "name": "Test", "type": "stock"}],
+                market_data={"TEST.MI": df},
+                regime_data={"BENCH.MI": benchmark},
+                config=cfg,
+            )
+
+        self.assertEqual(result.closed_trades, 0)
+        self.assertEqual(len(result.open_positions), 0)
+        self.assertEqual(result.regime_counts.get("risk_off"), 3)
 
 
 if __name__ == "__main__":

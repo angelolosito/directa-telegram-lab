@@ -12,3 +12,22 @@ def estimate_commission(notional: float, costs_config: dict) -> float:
 
 def estimate_round_trip_cost(notional: float, costs_config: dict) -> float:
     return round(estimate_commission(notional, costs_config) * 2, 2)
+
+
+def max_affordable_quantity(
+    entry_price: float,
+    cash: float,
+    max_allocation: float,
+    costs_config: dict,
+) -> int:
+    if entry_price <= 0 or cash <= 0 or max_allocation <= 0:
+        return 0
+
+    qty = int(min(cash, max_allocation) // entry_price)
+    while qty > 0:
+        notional = qty * entry_price
+        commission = estimate_commission(notional, costs_config)
+        if notional <= max_allocation and notional + commission <= cash:
+            return qty
+        qty -= 1
+    return 0

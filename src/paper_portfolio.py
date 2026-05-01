@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .costs import estimate_commission, estimate_round_trip_cost
+from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
 from .strategy import Signal
 
 
@@ -238,7 +238,7 @@ class PaperPortfolio:
             return signal
 
         qty_by_risk = int(risk_per_trade // unit_risk)
-        qty_by_allocation = int(min(max_allocation, available_cash) // signal.entry)
+        qty_by_allocation = max_affordable_quantity(signal.entry, available_cash, max_allocation, costs_cfg)
         qty = max(0, min(qty_by_risk, qty_by_allocation))
 
         notional = round(qty * signal.entry, 2) if qty > 0 else 0.0

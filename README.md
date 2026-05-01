@@ -13,6 +13,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
   - Trend + Pullback
   - Breakout controllato
 - Assegna uno score 0-100 ai segnali e mostra la classifica dei migliori candidati.
+- Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -35,10 +36,12 @@ directa-telegram-lab/
 ├── main.py
 ├── requirements.txt
 ├── src/
+│   ├── backtest.py
 │   ├── config.py
 │   ├── costs.py
 │   ├── data_provider.py
 │   ├── indicators.py
+│   ├── market_regime.py
 │   ├── paper_portfolio.py
 │   ├── report.py
 │   ├── strategy.py
@@ -135,6 +138,17 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+market_regime:
+  enabled: true
+  neutral_score_boost: 5
+  risk_off_score_boost: 15
+  block_new_positions_when_risk_off: true
+  benchmarks:
+    - symbol: SWDA.MI
+      name: iShares Core MSCI World UCITS ETF
+    - symbol: CSSPX.MI
+      name: iShares Core S&P 500 UCITS ETF
+
 risk:
   initial_capital: 1000
   risk_per_trade: 25
@@ -148,6 +162,7 @@ strategy:
 ```
 
 `min_signal_score` blocca i segnali tecnicamente validi ma qualitativamente deboli. Lo score considera forza del trend, RSI, rischio percentuale, volumi, rapporto rischio/rendimento e incidenza dei costi.
+`market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile può bloccare nuovi ingressi paper.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 
