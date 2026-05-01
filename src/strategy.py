@@ -67,6 +67,10 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(value, high))
 
 
+def _score_watch_setup(base: float, *points: float) -> float:
+    return round(_clamp(base + sum(points), 0.0, 100.0), 1)
+
+
 def _latest_context(df: pd.DataFrame) -> tuple[pd.Series, pd.Series] | tuple[None, None]:
     clean = df.dropna(subset=["Close", "SMA20", "SMA50", "SMA200", "RSI14", "ATR14"])
     if len(clean) < 2:
@@ -214,6 +218,7 @@ def analyze_buy_signals(
     high20_prev = _safe_float(latest.get("HIGH20_PREV"))
 
     signals: list[Signal] = []
+    watch_signals: list[Signal] = []
     enabled = strategy_config.get("enabled", {})
 
     trend_up = close > sma200 and sma50 > sma200
@@ -263,6 +268,49 @@ def analyze_buy_signals(
                             "volume": volume,
                             "vol20": vol20,
                             "recent_low": recent_low,
+                        },
+                    )
+                )
+        elif trend_up and touched_pullback_zone and rsi_ok:
+            distance_sma20_pct = ((close / sma20) - 1.0) * 100.0 if sma20 > 0 else None
+            readiness = _score_watch_setup(
+                50.0,
+                10.0 if close > sma200 else 0.0,
+                8.0 if touched_pullback_zone else 0.0,
+                6.0 if rsi_ok else -6.0,
+                6.0 if recovered_sma20 else -4.0,
+            )
+            if readiness >= float(strategy_config.get("setup_watch_min_score", 50.0)):
+                missing = "attendere recupero sopra SMA20" if not recovered_sma20 else "attendere chiusura più convincente"
+                watch_signals.append(
+                    Signal(
+                        symbol=symbol,
+                        name=name,
+                        instrument_type=instrument_type,
+                        action="WATCH",
+                        strategy="trend_pullback_setup",
+                        date=today.isoformat(),
+                        price=round(close, 4),
+                        reason=(
+                            "Setup pullback in formazione: trend primario positivo e prezzo tornato in zona utile; "
+                            f"{missing}."
+                        ),
+                        score=readiness,
+                        score_details=(
+                            f"radar pullback, distanza SMA20 "
+                            f"{distance_sma20_pct:.2f}%" if distance_sma20_pct is not None else "radar pullback"
+                        ),
+                        meta={
+                            "close": close,
+                            "sma20": sma20,
+                            "sma50": sma50,
+                            "sma200": sma200,
+                            "rsi14": rsi14,
+                            "atr14": atr14,
+                            "volume": volume,
+                            "vol20": vol20,
+                            "recent_low": recent_low,
+                            "readiness": readiness,
                         },
                     )
                 )
@@ -316,8 +364,57 @@ def analyze_buy_signals(
                         },
                     )
                 )
+        elif trend_up and high20_prev is not None and high20_prev > 0:
+            near_breakout_pct = float(strategy_config.get("near_breakout_pct", 1.5))
+            distance_to_breakout_pct = ((high20_prev / close) - 1.0) * 100.0 if close > 0 else None
+            near_breakout = close >= high20_prev * (1.0 - near_breakout_pct / 100.0) and close <= high20_prev * 1.002
+            if near_breakout:
+                volume_ratio = volume / vol20 if volume > 0 and vol20 > 0 else 0.0
+                readiness = _score_watch_setup(
+                    52.0,
+                    10.0 if close > sma200 else 0.0,
+                    8.0 if rsi_ok else -6.0,
+                    _clamp((volume_ratio - 1.0) * 10.0, -4.0, 8.0),
+                )
+                if readiness >= float(strategy_config.get("setup_watch_min_score", 50.0)):
+                    watch_signals.append(
+                        Signal(
+                            symbol=symbol,
+                            name=name,
+                            instrument_type=instrument_type,
+                            action="WATCH",
+                            strategy="near_breakout_setup",
+                            date=today.isoformat(),
+                            price=round(close, 4),
+                            reason=(
+                                "Setup breakout in avvicinamento: prezzo vicino al massimo recente; "
+                                "attendere chiusura sopra livello con volumi adeguati."
+                            ),
+                            score=readiness,
+                            score_details=(
+                                f"radar breakout, distanza livello "
+                                f"{distance_to_breakout_pct:.2f}%, volume x{volume_ratio:.2f}"
+                                if distance_to_breakout_pct is not None
+                                else f"radar breakout, volume x{volume_ratio:.2f}"
+                            ),
+                            meta={
+                                "close": close,
+                                "sma50": sma50,
+                                "sma200": sma200,
+                                "rsi14": rsi14,
+                                "atr14": atr14,
+                                "high20_prev": high20_prev,
+                                "volume": volume,
+                                "vol20": vol20,
+                                "volume_ratio": round(volume_ratio, 2),
+                                "readiness": readiness,
+                            },
+                        )
+                    )
 
     if not signals:
+        if watch_signals:
+            return sorted(watch_signals, key=lambda signal: signal.score or 0.0, reverse=True)[:2]
         signals.append(
             Signal(
                 symbol=symbol,

@@ -7,6 +7,7 @@ import pandas as pd
 
 from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
 from .market_regime import evaluate_market_regime
+from .opportunity import review_opportunity
 from .strategy import Signal, analyze_buy_signals, score_signal
 
 
@@ -313,6 +314,9 @@ def run_backtest(
                     signal = _size_signal(signal, cash, risk_cfg, costs_cfg)
                     signal = score_signal(signal, strategy_cfg)
                     if signal.qty <= 0:
+                        continue
+                    signal = review_opportunity(signal, market_regime, config)
+                    if signal.action != "BUY":
                         continue
                     if signal.score is not None and signal.score < active_min_signal_score:
                         continue

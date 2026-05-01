@@ -12,6 +12,7 @@ from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
 from src.data_provider import DataProviderError, fetch_daily_data
 from src.market_regime import configured_benchmarks, evaluate_market_regime
+from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
 from src.report import build_daily_message, save_markdown_report
 from src.strategy import Signal, analyze_buy_signals, score_signal
@@ -275,6 +276,9 @@ def main() -> int:
                 continue
             signals = analyze_buy_signals(instrument, df, strategy_cfg, today)
             for signal in signals:
+                if signal.action == "WATCH":
+                    all_logged_signals.append(signal)
+                    continue
                 if signal.action != "BUY":
                     continue
                 signal = portfolio.size_signal(signal)
@@ -284,12 +288,8 @@ def main() -> int:
                     signal.reason += " Segnale non eseguito in paper: capitale/size non sufficiente con i limiti attuali."
                     all_logged_signals.append(signal)
                     continue
-                if not market_regime.new_positions_allowed:
-                    signal.action = "WATCH"
-                    signal.reason += (
-                        " Segnale non eseguito in paper: filtro regime mercato in difesa. "
-                        f"{market_regime.reason}"
-                    )
+                signal = review_opportunity(signal, market_regime, cfg)
+                if signal.action != "BUY":
                     all_logged_signals.append(signal)
                     continue
                 if signal.score is not None and signal.score < min_signal_score:

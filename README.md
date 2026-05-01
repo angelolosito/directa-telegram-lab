@@ -14,6 +14,8 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
   - Breakout controllato
 - Assegna uno score 0-100 ai segnali e mostra la classifica dei migliori candidati.
 - Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
+- Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
+- Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -42,6 +44,7 @@ directa-telegram-lab/
 │   ├── data_provider.py
 │   ├── indicators.py
 │   ├── market_regime.py
+│   ├── opportunity.py
 │   ├── paper_portfolio.py
 │   ├── report.py
 │   ├── strategy.py
@@ -149,6 +152,15 @@ market_regime:
     - symbol: CSSPX.MI
       name: iShares Core S&P 500 UCITS ETF
 
+opportunity:
+  enabled: true
+  min_decision_score: 62
+  ideal_pullback_distance_pct: 2.5
+  max_pullback_distance_pct: 4.5
+  ideal_breakout_extension_atr: 0.8
+  max_breakout_extension_atr: 1.4
+  max_cost_pct: 5.0
+
 risk:
   initial_capital: 1000
   risk_per_trade: 25
@@ -159,10 +171,14 @@ risk:
 
 strategy:
   min_signal_score: 60
+  near_breakout_pct: 1.5
+  setup_watch_min_score: 50
 ```
 
 `min_signal_score` blocca i segnali tecnicamente validi ma qualitativamente deboli. Lo score considera forza del trend, RSI, rischio percentuale, volumi, rapporto rischio/rendimento e incidenza dei costi.
 `market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile può bloccare nuovi ingressi paper.
+`opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
+`setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 

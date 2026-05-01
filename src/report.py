@@ -18,6 +18,21 @@ def _cost_pct(signal: Signal) -> float | None:
     return (signal.estimated_round_trip_cost / signal.notional) * 100
 
 
+def _opportunity(signal: Signal) -> dict:
+    return (signal.meta or {}).get("opportunity", {})
+
+
+def _opportunity_line(signal: Signal) -> str:
+    opportunity = _opportunity(signal)
+    if not opportunity:
+        return ""
+    return (
+        f"Decisione: {opportunity.get('decision', 'n/d')} "
+        f"| Grado: {opportunity.get('grade', 'n/d')} "
+        f"| Soglia: {_format_optional_float(opportunity.get('threshold'), 1)}/100\n"
+    )
+
+
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
         return (
@@ -25,6 +40,7 @@ def format_signal(signal: Signal) -> str:
             f"<b>{signal.name}</b> ({signal.symbol})\n"
             f"Strategia: {signal.strategy}\n"
             f"Score: {_format_optional_float(signal.score, 1)}/100\n"
+            f"{_opportunity_line(signal)}"
             f"Prezzo: {signal.price:.4f} €\n"
             f"Entry simulata: {signal.entry:.4f} €\n"
             f"Stop: {signal.stop:.4f} €\n"
@@ -47,11 +63,17 @@ def format_signal(signal: Signal) -> str:
 
 def format_candidate_signal(signal: Signal, rank: int) -> str:
     status = "operativo" if signal.action == "BUY" else "watch"
+    opportunity = _opportunity(signal)
+    decision = (
+        f" | {opportunity.get('decision')}/{opportunity.get('grade')}"
+        if opportunity
+        else ""
+    )
     return (
         f"{rank}. <b>{signal.symbol}</b> {signal.name} | "
         f"score {_format_optional_float(signal.score, 1)}/100 | "
         f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
-        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}"
+        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}"
     )
 
 

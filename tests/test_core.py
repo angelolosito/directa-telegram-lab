@@ -10,8 +10,9 @@ import pandas as pd
 
 from src.backtest import run_backtest
 from src.market_regime import evaluate_market_regime
+from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
-from src.strategy import Signal, score_signal
+from src.strategy import Signal, analyze_buy_signals, score_signal
 
 
 def sample_config() -> dict:
@@ -42,9 +43,23 @@ def sample_config() -> dict:
             "rsi_max_breakout": 75,
             "breakout_lookback_days": 20,
             "volume_breakout_multiplier": 1.10,
+            "near_breakout_pct": 1.5,
+            "setup_watch_min_score": 50.0,
             "pullback_lookback_days": 8,
             "atr_stop_multiplier": 1.50,
             "breakout_atr_stop_multiplier": 2.00,
+        },
+        "opportunity": {
+            "enabled": True,
+            "min_decision_score": 62.0,
+            "ideal_pullback_distance_pct": 2.5,
+            "max_pullback_distance_pct": 4.5,
+            "ideal_breakout_extension_atr": 0.8,
+            "max_breakout_extension_atr": 1.4,
+            "min_risk_pct": 0.8,
+            "max_risk_pct": 8.0,
+            "high_quality_cost_pct": 1.0,
+            "max_cost_pct": 5.0,
         },
         "backtest": {"max_new_positions_per_day": 1},
     }
@@ -170,6 +185,126 @@ class MarketRegimeTests(unittest.TestCase):
         self.assertEqual(regime.state, "risk_off")
         self.assertFalse(regime.new_positions_allowed)
         self.assertEqual(regime.active_min_signal_score, 75.0)
+
+
+class OpportunityReviewTests(unittest.TestCase):
+    def test_overextended_breakout_becomes_watch(self) -> None:
+        cfg = sample_config()
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="controlled_breakout",
+            date="2026-05-01",
+            price=12.0,
+            entry=12.0,
+            stop=11.0,
+            target=14.0,
+            reward_risk=2.0,
+            qty=20,
+            notional=240.0,
+            estimated_round_trip_cost=3.0,
+            score=82.0,
+            score_details="base tecnico",
+            meta={
+                "close": 12.0,
+                "sma50": 10.5,
+                "sma200": 9.5,
+                "rsi14": 58.0,
+                "atr14": 1.0,
+                "high20_prev": 10.0,
+                "volume": 1300,
+                "vol20": 1000,
+            },
+        )
+        regime = {
+            "state": "risk_on",
+            "new_positions_allowed": True,
+            "active_min_signal_score": 60.0,
+        }
+
+        reviewed = review_opportunity(signal, regime, cfg)
+
+        self.assertEqual(reviewed.action, "WATCH")
+        self.assertIn("breakout troppo esteso", reviewed.reason)
+        self.assertEqual((reviewed.meta or {})["opportunity"]["decision"], "NO_GO")
+
+    def test_clean_pullback_keeps_buy_decision(self) -> None:
+        cfg = sample_config()
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-05-01",
+            price=10.2,
+            entry=10.2,
+            stop=9.8,
+            target=11.0,
+            reward_risk=2.0,
+            qty=30,
+            notional=306.0,
+            estimated_round_trip_cost=3.0,
+            score=70.0,
+            score_details="base tecnico",
+            meta={
+                "close": 10.2,
+                "sma20": 10.0,
+                "sma50": 9.6,
+                "sma200": 9.0,
+                "rsi14": 55.0,
+                "atr14": 0.3,
+                "volume": 1200,
+                "vol20": 1000,
+            },
+        )
+        regime = {
+            "state": "risk_on",
+            "new_positions_allowed": True,
+            "active_min_signal_score": 60.0,
+        }
+
+        reviewed = review_opportunity(signal, regime, cfg)
+
+        self.assertEqual(reviewed.action, "BUY")
+        self.assertEqual((reviewed.meta or {})["opportunity"]["decision"], "GO")
+        self.assertGreater(reviewed.score or 0, 70.0)
+
+
+class SetupRadarTests(unittest.TestCase):
+    def test_near_breakout_returns_watch_signal(self) -> None:
+        cfg = sample_config()
+        dates = pd.date_range("2026-01-01", periods=25, freq="D")
+        df = pd.DataFrame(
+            {
+                "Open": [9.8] * 25,
+                "High": [10.0] * 24 + [10.0],
+                "Low": [9.5] * 25,
+                "Close": [9.7] * 24 + [9.9],
+                "SMA20": [9.4] * 25,
+                "SMA50": [9.2] * 25,
+                "SMA200": [8.8] * 25,
+                "RSI14": [58.0] * 25,
+                "ATR14": [0.3] * 25,
+                "Volume": [1000] * 24 + [1200],
+                "VOL20": [1000] * 25,
+                "HIGH20_PREV": [10.0] * 25,
+            },
+            index=dates,
+        )
+
+        signals = analyze_buy_signals(
+            {"symbol": "TEST.MI", "name": "Test", "type": "stock"},
+            df,
+            cfg["strategy"],
+            date(2026, 1, 25),
+        )
+
+        self.assertEqual(signals[0].action, "WATCH")
+        self.assertEqual(signals[0].strategy, "near_breakout_setup")
+        self.assertGreaterEqual(signals[0].score or 0, 50.0)
 
 
 class BacktestTests(unittest.TestCase):
