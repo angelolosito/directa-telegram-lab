@@ -10,16 +10,25 @@ run:
   send_telegram: true
   dry_run_default: false
 
+data:
+  request_timeout_seconds: 6
+  process_timeout_seconds: 20
+  download_retries: 0
+
 risk:
   initial_capital: 1000.0
   risk_per_trade: 25.0
   monthly_loss_limit: 100.0
   max_open_positions: 2
+  max_trades_per_month: 6
+  cooldown_after_stop_days: 5
   max_allocation_per_trade: 500.0
   min_reward_risk: 2.0
   max_holding_days: 45
 
 strategy:
+  min_signal_score: 60
+  score_base: 50
   enabled:
     trend_pullback: true
     controlled_breakout: true

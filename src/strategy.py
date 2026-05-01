@@ -27,6 +27,8 @@ class Signal:
     qty: int = 0
     notional: float = 0.0
     estimated_round_trip_cost: float = 0.0
+    score: float | None = None
+    score_details: str = ""
     meta: dict | None = None
 
     def to_dict(self) -> dict:
@@ -46,6 +48,8 @@ class Signal:
             "qty": self.qty,
             "notional": self.notional,
             "estimated_round_trip_cost": self.estimated_round_trip_cost,
+            "score": self.score,
+            "score_details": self.score_details,
             "meta": self.meta or {},
         }
 
@@ -59,11 +63,118 @@ def _safe_float(value) -> float | None:
         return None
 
 
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(value, high))
+
+
 def _latest_context(df: pd.DataFrame) -> tuple[pd.Series, pd.Series] | tuple[None, None]:
     clean = df.dropna(subset=["Close", "SMA20", "SMA50", "SMA200", "RSI14", "ATR14"])
     if len(clean) < 2:
         return None, None
     return clean.iloc[-1], clean.iloc[-2]
+
+
+def score_signal(signal: Signal, strategy_config: dict) -> Signal:
+    """Attach a 0-100 quality score to a sized BUY signal."""
+    meta = signal.meta or {}
+    close = _safe_float(meta.get("close")) or signal.price
+    sma50 = _safe_float(meta.get("sma50"))
+    sma200 = _safe_float(meta.get("sma200"))
+    rsi14 = _safe_float(meta.get("rsi14"))
+    volume = _safe_float(meta.get("volume"))
+    vol20 = _safe_float(meta.get("vol20"))
+
+    if close is None or signal.entry is None or signal.stop is None:
+        signal.score = 0.0
+        signal.score_details = "segnale incompleto"
+        return signal
+
+    base = float(strategy_config.get("score_base", 50.0))
+    score = base
+
+    strategy_bonus = 10.0 if signal.strategy == "controlled_breakout" else 8.0
+    score += strategy_bonus
+
+    trend_points = 0.0
+    if sma200 and sma200 > 0:
+        trend_points += _clamp(((close / sma200) - 1.0) * 100.0 * 0.45, -8.0, 10.0)
+    if sma50 and sma200 and sma200 > 0:
+        trend_points += _clamp(((sma50 / sma200) - 1.0) * 100.0 * 0.55, -5.0, 8.0)
+    score += trend_points
+
+    rr = signal.reward_risk or 0.0
+    min_rr = float(strategy_config.get("min_reward_risk", 2.0))
+    rr_points = _clamp((rr - min_rr) * 8.0, -6.0, 12.0)
+    score += rr_points
+
+    rsi_points = 0.0
+    if rsi14 is not None:
+        if 50 <= rsi14 <= 64:
+            rsi_points = 10.0
+        elif 45 <= rsi14 < 50 or 64 < rsi14 <= 70:
+            rsi_points = 5.0
+        elif 40 <= rsi14 < 45 or 70 < rsi14 <= 75:
+            rsi_points = 0.0
+        else:
+            rsi_points = -8.0
+    score += rsi_points
+
+    unit_risk = signal.entry - signal.stop
+    risk_pct = (unit_risk / signal.entry) * 100.0 if signal.entry > 0 else 0.0
+    if 1.5 <= risk_pct <= 5.5:
+        risk_points = 8.0
+    elif 0.8 <= risk_pct < 1.5 or 5.5 < risk_pct <= 8.0:
+        risk_points = 2.0
+    else:
+        risk_points = -8.0
+    score += risk_points
+
+    volume_points = 0.0
+    if volume and vol20 and vol20 > 0:
+        volume_ratio = volume / vol20
+        volume_points = _clamp((volume_ratio - 1.0) * 10.0, -5.0, 8.0)
+    elif signal.strategy == "controlled_breakout":
+        volume_points = -6.0
+    score += volume_points
+
+    cost_pct = (
+        (signal.estimated_round_trip_cost / signal.notional) * 100.0
+        if signal.notional > 0
+        else 0.0
+    )
+    if cost_pct == 0.0:
+        cost_points = 0.0
+    elif cost_pct <= 0.35:
+        cost_points = 4.0
+    elif cost_pct <= 0.65:
+        cost_points = -2.0
+    elif cost_pct <= 1.0:
+        cost_points = -8.0
+    else:
+        cost_points = -15.0
+    score += cost_points
+
+    final_score = round(_clamp(score, 0.0, 100.0), 1)
+    signal.score = final_score
+    signal.score_details = (
+        f"strategia {strategy_bonus:+.1f}, trend {trend_points:+.1f}, "
+        f"R/R {rr_points:+.1f}, RSI {rsi_points:+.1f}, rischio {risk_points:+.1f}, "
+        f"volumi {volume_points:+.1f}, costi {cost_points:+.1f}"
+    )
+    meta["score_breakdown"] = {
+        "base": base,
+        "strategy": strategy_bonus,
+        "trend": round(trend_points, 2),
+        "reward_risk": round(rr_points, 2),
+        "rsi": round(rsi_points, 2),
+        "risk": round(risk_points, 2),
+        "volume": round(volume_points, 2),
+        "cost": round(cost_points, 2),
+        "risk_pct": round(risk_pct, 2),
+        "cost_pct": round(cost_pct, 2),
+    }
+    signal.meta = meta
+    return signal
 
 
 def analyze_buy_signals(
@@ -149,6 +260,8 @@ def analyze_buy_signals(
                             "sma200": sma200,
                             "rsi14": rsi14,
                             "atr14": atr14,
+                            "volume": volume,
+                            "vol20": vol20,
                             "recent_low": recent_low,
                         },
                     )

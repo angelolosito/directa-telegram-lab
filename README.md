@@ -7,16 +7,20 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 ## Cosa fa
 
 - Scarica dati giornalieri tramite `yfinance`.
+- Applica timeout e retry brevi al download dati, così un ticker lento non blocca l'intero run.
 - Calcola indicatori tecnici: SMA 20/50/200, RSI 14, ATR 14, volume medio.
 - Genera segnali con due strategie:
   - Trend + Pullback
   - Breakout controllato
+- Assegna uno score 0-100 ai segnali e mostra la classifica dei migliori candidati.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
   - Rischio massimo per trade: 25 €
   - Perdita massima mensile: 100 €
   - Massimo 2 posizioni aperte
+  - Massimo 6 ingressi al mese
+  - Cooldown di 5 giorni dopo uno stop loss sullo stesso strumento
 - Stima commissioni Directa con modello configurabile.
 - Invia alert Telegram.
 - Salva report giornaliero in `reports/`.
@@ -52,6 +56,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python main.py --dry-run
 ```
+
+`--dry-run` usa una copia temporanea del database: mostra chiusure, trailing stop e nuovi segnali simulati, ma non salva modifiche in `state/`, `data/` o `reports/`.
 
 Per inviare Telegram in locale:
 
@@ -105,12 +111,26 @@ Apri `watchlist.yaml` e aggiungi/rimuovi strumenti. I ticker sono in formato Yah
 Apri `config.yaml`:
 
 ```yaml
+data:
+  request_timeout_seconds: 6
+  process_timeout_seconds: 20
+  download_retries: 0
+
 risk:
   initial_capital: 1000
   risk_per_trade: 25
   monthly_loss_limit: 100
   max_open_positions: 2
+  max_trades_per_month: 6
+  cooldown_after_stop_days: 5
+
+strategy:
+  min_signal_score: 60
 ```
+
+`min_signal_score` blocca i segnali tecnicamente validi ma qualitativamente deboli. Lo score considera forza del trend, RSI, rischio percentuale, volumi, rapporto rischio/rendimento e incidenza dei costi.
+Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
+`process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 
 ## Disclaimer
 

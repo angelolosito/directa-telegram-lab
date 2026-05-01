@@ -152,10 +152,43 @@ class PaperPortfolio:
         ).fetchone()
         return float(row["pnl"])
 
+    def trades_opened_month(self, reference_date: date) -> int:
+        start = reference_date.replace(day=1).isoformat()
+        end = reference_date.isoformat()
+        row = self.conn.execute(
+            """
+            SELECT COUNT(*) AS trade_count
+            FROM positions
+            WHERE entry_date >= ? AND entry_date <= ?
+            """,
+            (start, end),
+        ).fetchone()
+        return int(row["trade_count"])
+
+    def last_stop_exit_date(self, symbol: str) -> date | None:
+        row = self.conn.execute(
+            """
+            SELECT exit_date
+            FROM positions
+            WHERE symbol = ? AND status = 'CLOSED' AND exit_reason = 'stop_loss'
+            ORDER BY exit_date DESC, id DESC
+            LIMIT 1
+            """,
+            (symbol,),
+        ).fetchone()
+        if row is None or not row["exit_date"]:
+            return None
+        try:
+            return datetime.fromisoformat(row["exit_date"]).date()
+        except ValueError:
+            return None
+
     def can_open_new_position(self, signal: Signal, reference_date: date) -> tuple[bool, str]:
         risk_cfg = self.config["risk"]
         max_open = int(risk_cfg.get("max_open_positions", 2))
         monthly_loss_limit = float(risk_cfg.get("monthly_loss_limit", 100.0))
+        max_trades_per_month = int(risk_cfg.get("max_trades_per_month", 0))
+        cooldown_after_stop_days = int(risk_cfg.get("cooldown_after_stop_days", 0))
         open_count = len(self.open_positions())
 
         if signal.entry is None or signal.stop is None or signal.target is None:
@@ -166,6 +199,22 @@ class PaperPortfolio:
 
         if self.has_open_position(signal.symbol):
             return False, "Esiste già una posizione aperta su questo strumento."
+
+        if max_trades_per_month > 0:
+            monthly_trades = self.trades_opened_month(reference_date)
+            if monthly_trades >= max_trades_per_month:
+                return False, f"Limite ingressi mensili raggiunto: {monthly_trades}/{max_trades_per_month}."
+
+        if cooldown_after_stop_days > 0:
+            last_stop = self.last_stop_exit_date(signal.symbol)
+            if last_stop is not None:
+                days_since_stop = (reference_date - last_stop).days
+                if 0 <= days_since_stop < cooldown_after_stop_days:
+                    remaining = cooldown_after_stop_days - days_since_stop
+                    return False, (
+                        f"Cooldown post-stop attivo su {signal.symbol}: "
+                        f"ancora {remaining} giorni prima di un nuovo ingresso."
+                    )
 
         realized = self.realized_monthly_pnl(reference_date)
         if realized <= -monthly_loss_limit:
@@ -358,14 +407,108 @@ class PaperPortfolio:
         self.log_event("CLOSE", f"Chiusa posizione paper su {row['symbol']}: {reason}", row["symbol"], event)
         return event
 
-    def summary(self) -> dict:
+    def _latest_close(self, symbol: str, market_data: dict[str, pd.DataFrame] | None) -> float | None:
+        if not market_data:
+            return None
+        df = market_data.get(symbol)
+        if df is None or df.empty or "Close" not in df:
+            return None
+        clean = df.dropna(subset=["Close"])
+        if clean.empty:
+            return None
+        return float(clean.iloc[-1]["Close"])
+
+    def trade_stats(self) -> dict:
+        rows = self.conn.execute(
+            """
+            SELECT net_pnl
+            FROM positions
+            WHERE status = 'CLOSED' AND net_pnl IS NOT NULL
+            """
+        ).fetchall()
+        values = [float(row["net_pnl"]) for row in rows]
+        closed_count = len(values)
+        if closed_count == 0:
+            return {
+                "closed_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "win_rate": None,
+                "profit_factor": None,
+                "avg_trade_pnl": None,
+                "best_trade_pnl": None,
+                "worst_trade_pnl": None,
+            }
+
+        wins = [value for value in values if value > 0]
+        losses = [value for value in values if value < 0]
+        gross_profit = sum(wins)
+        gross_loss = abs(sum(losses))
+        profit_factor = None if gross_loss == 0 else gross_profit / gross_loss
+
+        return {
+            "closed_trades": closed_count,
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
+            "win_rate": round((len(wins) / closed_count) * 100, 1),
+            "profit_factor": round(profit_factor, 2) if profit_factor is not None else None,
+            "avg_trade_pnl": round(sum(values) / closed_count, 2),
+            "best_trade_pnl": round(max(values), 2),
+            "worst_trade_pnl": round(min(values), 2),
+        }
+
+    def summary(self, market_data: dict[str, pd.DataFrame] | None = None) -> dict:
         cash = self.cash()
         open_rows = self.conn.execute("SELECT * FROM positions WHERE status = 'OPEN'").fetchall()
         closed_row = self.conn.execute(
             "SELECT COALESCE(SUM(net_pnl), 0) AS realized FROM positions WHERE status = 'CLOSED'"
         ).fetchone()
+        initial_row = self.conn.execute("SELECT initial_capital FROM account WHERE id = 1").fetchone()
+
+        open_market_value = 0.0
+        unrealized_pnl = 0.0
+        open_risk_to_stop = 0.0
+        for row in open_rows:
+            qty = int(row["qty"])
+            entry_price = float(row["entry_price"])
+            stop = float(row["stop"])
+            entry_commission = float(row["entry_commission"])
+            close = self._latest_close(row["symbol"], market_data) or entry_price
+
+            exit_notional = close * qty
+            exit_commission = estimate_commission(exit_notional, self.config["costs"])
+            open_market_value += exit_notional
+            unrealized_pnl += ((close - entry_price) * qty) - entry_commission - exit_commission
+
+            stop_notional = stop * qty
+            stop_exit_commission = estimate_commission(stop_notional, self.config["costs"])
+            trade_risk = ((entry_price - stop) * qty) + entry_commission + stop_exit_commission
+            open_risk_to_stop += max(0.0, trade_risk)
+
+        equity = cash + open_market_value - sum(
+            estimate_commission(
+                (self._latest_close(row["symbol"], market_data) or float(row["entry_price"])) * int(row["qty"]),
+                self.config["costs"],
+            )
+            for row in open_rows
+        )
+        realized_pnl = float(closed_row["realized"])
+        initial_capital = float(initial_row["initial_capital"]) if initial_row else float(
+            self.config["risk"].get("initial_capital", 1000.0)
+        )
+        total_pnl = equity - initial_capital
+        total_return_pct = (total_pnl / initial_capital) * 100 if initial_capital else 0.0
+
+        stats = self.trade_stats()
         return {
             "cash": round(cash, 2),
             "open_positions": len(open_rows),
-            "realized_pnl": round(float(closed_row["realized"]), 2),
+            "open_market_value": round(open_market_value, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "equity": round(equity, 2),
+            "total_pnl": round(total_pnl, 2),
+            "total_return_pct": round(total_return_pct, 2),
+            "open_risk_to_stop": round(open_risk_to_stop, 2),
+            **stats,
         }
