@@ -64,3 +64,113 @@ watchlist:
     name: Assicurazioni Generali
     type: stock
     enabled: true
+
+  - symbol: A2A.MI
+    name: A2A
+    type: stock
+    enabled: true
+
+  - symbol: AMP.MI
+    name: Amplifon
+    type: stock
+    enabled: true
+
+  - symbol: AZM.MI
+    name: Azimut
+    type: stock
+    enabled: true
+
+  - symbol: BAMI.MI
+    name: Banco BPM
+    type: stock
+    enabled: true
+
+  - symbol: BMED.MI
+    name: Banca Mediolanum
+    type: stock
+    enabled: true
+
+  - symbol: BMPS.MI
+    name: Banca Monte dei Paschi di Siena
+    type: stock
+    enabled: true
+
+  - symbol: BPE.MI
+    name: BPER Banca
+    type: stock
+    enabled: true
+
+  - symbol: BC.MI
+    name: Brunello Cucinelli
+    type: stock
+    enabled: true
+
+  - symbol: BZU.MI
+    name: Buzzi
+    type: stock
+    enabled: true
+
+  - symbol: CPR.MI
+    name: Campari
+    type: stock
+    enabled: true
+
+  - symbol: DIA.MI
+    name: DiaSorin
+    type: stock
+    enabled: true
+
+  - symbol: FBK.MI
+    name: FinecoBank
+    type: stock
+    enabled: true
+
+  - symbol: HER.MI
+    name: Hera
+    type: stock
+    enabled: true
+
+  - symbol: IG.MI
+    name: Italgas
+    type: stock
+    enabled: true
+
+  - symbol: MB.MI
+    name: Mediobanca
+    type: stock
+    enabled: true
+
+  - symbol: MONC.MI
+    name: Moncler
+    type: stock
+    enabled: true
+
+  - symbol: NEXI.MI
+    name: Nexi
+    type: stock
+    enabled: true
+
+  - symbol: PIRC.MI
+    name: Pirelli
+    type: stock
+    enabled: true
+
+  - symbol: PST.MI
+    name: Poste Italiane
+    type: stock
+    enabled: true
+
+  - symbol: PRY.MI
+    name: Prysmian
+    type: stock
+    enabled: true
+
+  - symbol: REC.MI
+    name: Recordati
+    type: stock
+    enabled: true
+
+  - symbol: TRN.MI
+    name: Terna
+    type: stock
+    enabled: true
