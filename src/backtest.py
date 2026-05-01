@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 
 from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
+from .currency import fx_rate_from_meta, price_to_base
 from .market_regime import evaluate_market_regime
 from .opportunity import review_opportunity
 from .relative_strength import apply_relative_strength
@@ -121,7 +122,7 @@ def _estimate_equity(
     for pos in positions:
         row = _row_on_or_before(market_data[pos.symbol], day)
         close = _safe_float(row.get("Close")) if row is not None else pos.entry_price
-        exit_notional = (close or pos.entry_price) * pos.qty
+        exit_notional = price_to_base(close or pos.entry_price, pos.meta) * pos.qty
         equity += exit_notional - estimate_commission(exit_notional, costs_cfg)
     return round(equity, 2)
 
@@ -130,20 +131,25 @@ def _size_signal(signal: Signal, cash: float, risk_cfg: dict, costs_cfg: dict) -
     if signal.entry is None or signal.stop is None:
         return signal
 
-    unit_risk = signal.entry - signal.stop
+    meta = signal.meta or {}
+    fx_rate = fx_rate_from_meta(meta)
+    unit_risk = (signal.entry - signal.stop) * fx_rate
     if unit_risk <= 0:
         signal.reason += " Rischio unitario non valido."
         return signal
 
     risk_per_trade = float(risk_cfg.get("risk_per_trade", 25.0))
     max_allocation = float(risk_cfg.get("max_allocation_per_trade", 500.0))
+    entry_base = signal.entry * fx_rate
     qty_by_risk = int(risk_per_trade // unit_risk)
-    qty_by_allocation = max_affordable_quantity(signal.entry, cash, max_allocation, costs_cfg)
+    qty_by_allocation = max_affordable_quantity(entry_base, cash, max_allocation, costs_cfg)
     qty = max(0, min(qty_by_risk, qty_by_allocation))
 
     signal.qty = qty
-    signal.notional = round(qty * signal.entry, 2) if qty > 0 else 0.0
+    signal.notional = round(qty * entry_base, 2) if qty > 0 else 0.0
     signal.estimated_round_trip_cost = estimate_round_trip_cost(signal.notional, costs_cfg) if qty > 0 else 0.0
+    meta["fx_to_base"] = fx_rate
+    signal.meta = meta
     return signal
 
 
@@ -154,8 +160,9 @@ def _close_position(
     exit_reason: str,
     costs_cfg: dict,
 ) -> tuple[BacktestTrade, float]:
-    gross_pnl = (exit_price - pos.entry_price) * pos.qty
-    exit_notional = exit_price * pos.qty
+    fx_rate = fx_rate_from_meta(pos.meta)
+    gross_pnl = (exit_price - pos.entry_price) * pos.qty * fx_rate
+    exit_notional = exit_price * pos.qty * fx_rate
     exit_commission = estimate_commission(exit_notional, costs_cfg)
     net_pnl = gross_pnl - pos.entry_commission - exit_commission
     cash_in = exit_notional - exit_commission
@@ -343,7 +350,7 @@ def run_backtest(
                 continue
             if signal.entry is None or signal.stop is None or signal.target is None:
                 continue
-            notional = signal.qty * signal.entry
+            notional = signal.notional or price_to_base(signal.entry, signal.meta) * signal.qty
             commission = estimate_commission(notional, costs_cfg)
             total_cost = notional + commission
             if cash < total_cost:

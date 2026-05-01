@@ -13,7 +13,11 @@ from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
-from src.relative_strength import apply_relative_strength
+from src.relative_strength import (
+    apply_relative_strength,
+    benchmark_for_instrument,
+    configured_relative_strength_benchmarks,
+)
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 
@@ -159,6 +163,30 @@ class RiskControlTests(unittest.TestCase):
 
         self.assertEqual(sized.qty, 0)
 
+    def test_position_size_converts_foreign_notional_to_base_currency(self) -> None:
+        cfg = sample_config()
+        with TemporaryDirectory() as tmp:
+            portfolio = PaperPortfolio(Path(tmp) / "lab.sqlite", cfg)
+            signal = Signal(
+                symbol="AAPL",
+                name="Apple",
+                instrument_type="stock",
+                action="BUY",
+                strategy="trend_pullback",
+                date="2026-05-01",
+                price=100.0,
+                entry=100.0,
+                stop=95.0,
+                target=110.0,
+                reward_risk=2.0,
+                meta={"currency": "USD", "base_currency": "EUR", "fx_to_base": 0.9},
+            )
+            sized = portfolio.size_signal(signal)
+            portfolio.close()
+
+        self.assertEqual(sized.qty, 5)
+        self.assertEqual(sized.notional, 450.0)
+
     def test_signal_score_includes_cost_penalty(self) -> None:
         cfg = sample_config()
         signal = Signal(
@@ -191,6 +219,38 @@ class RiskControlTests(unittest.TestCase):
         self.assertLess(scored.score or 0, 100)
         self.assertIn("costi", scored.score_details)
 
+    def test_signal_score_includes_curated_universe_bonus(self) -> None:
+        cfg = sample_config()
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-05-01",
+            price=10.0,
+            entry=10.0,
+            stop=9.6,
+            target=10.8,
+            reward_risk=2.0,
+            qty=20,
+            notional=200.0,
+            estimated_round_trip_cost=3.0,
+            meta={
+                "close": 10.0,
+                "sma50": 9.5,
+                "sma200": 9.0,
+                "rsi14": 55.0,
+                "volume": 1200,
+                "vol20": 1000,
+                "universe_score": 5,
+            },
+        )
+        scored = score_signal(signal, cfg["strategy"])
+
+        self.assertEqual((scored.meta or {})["score_breakdown"]["universe"], 4.0)
+        self.assertIn("universo +4.0", scored.score_details)
+
 
 class MarketRegimeTests(unittest.TestCase):
     def test_risk_off_regime_blocks_new_positions(self) -> None:
@@ -218,6 +278,22 @@ class MarketRegimeTests(unittest.TestCase):
 
 
 class RelativeStrengthTests(unittest.TestCase):
+    def test_relative_strength_uses_explicit_and_regional_benchmarks(self) -> None:
+        cfg = sample_config()
+        cfg["relative_strength"]["benchmark_by_region"] = {"us_growth": "EQQQ.MI"}
+        watchlist = [
+            {"symbol": "AAPL", "type": "stock", "benchmark": "EQQQ.MI"},
+            {"symbol": "JPM", "type": "stock", "region": "us", "benchmark": "CSSPX.MI"},
+        ]
+
+        benchmarks = configured_relative_strength_benchmarks(cfg, watchlist)
+        symbols = [item["symbol"] for item in benchmarks]
+
+        self.assertIn("EQQQ.MI", symbols)
+        self.assertIn("CSSPX.MI", symbols)
+        self.assertEqual(benchmark_for_instrument(watchlist[0], cfg), "EQQQ.MI")
+        self.assertEqual(benchmark_for_instrument({"symbol": "NVDA", "region": "us_growth"}, cfg), "EQQQ.MI")
+
     def test_relative_strength_penalizes_lagging_signal(self) -> None:
         cfg = sample_config()
         dates = pd.date_range("2026-01-01", periods=5, freq="D")

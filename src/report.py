@@ -18,6 +18,14 @@ def _cost_pct(signal: Signal) -> float | None:
     return (signal.estimated_round_trip_cost / signal.notional) * 100
 
 
+def _currency(signal: Signal) -> str:
+    return str((signal.meta or {}).get("currency") or "EUR")
+
+
+def _base_currency(signal: Signal) -> str:
+    return str((signal.meta or {}).get("base_currency") or "EUR")
+
+
 def _opportunity(signal: Signal) -> dict:
     return (signal.meta or {}).get("opportunity", {})
 
@@ -66,6 +74,8 @@ def _relative_strength_line(signal: Signal) -> str:
 
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
+        currency = _currency(signal)
+        base_currency = _base_currency(signal)
         return (
             f"🟢 <b>POSSIBILE ACQUISTO PAPER</b>\n"
             f"<b>{signal.name}</b> ({signal.symbol})\n"
@@ -74,14 +84,14 @@ def format_signal(signal: Signal) -> str:
             f"{_opportunity_line(signal)}"
             f"{_learning_line(signal)}"
             f"{_relative_strength_line(signal)}"
-            f"Prezzo: {signal.price:.4f} €\n"
-            f"Entry simulata: {signal.entry:.4f} €\n"
-            f"Stop: {signal.stop:.4f} €\n"
-            f"Target: {signal.target:.4f} €\n"
+            f"Prezzo: {signal.price:.4f} {currency}\n"
+            f"Entry simulata: {signal.entry:.4f} {currency}\n"
+            f"Stop: {signal.stop:.4f} {currency}\n"
+            f"Target: {signal.target:.4f} {currency}\n"
             f"R/R: {signal.reward_risk}\n"
             f"Qty simulata: {signal.qty}\n"
-            f"Controvalore: {signal.notional:.2f} €\n"
-            f"Costi round-trip stimati: {signal.estimated_round_trip_cost:.2f} € "
+            f"Controvalore: {signal.notional:.2f} {base_currency}\n"
+            f"Costi round-trip stimati: {signal.estimated_round_trip_cost:.2f} {base_currency} "
             f"({_format_optional_float(_cost_pct(signal), 2)}%)\n"
             f"Dettaglio score: {signal.score_details}\n"
             f"Motivo: {signal.reason}"

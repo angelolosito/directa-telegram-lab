@@ -71,6 +71,30 @@ def _score_watch_setup(base: float, *points: float) -> float:
     return round(_clamp(base + sum(points), 0.0, 100.0), 1)
 
 
+def _instrument_meta(instrument: dict) -> dict:
+    keys = (
+        "region",
+        "sector",
+        "role",
+        "priority",
+        "currency",
+        "base_currency",
+        "fx_to_base",
+        "benchmark",
+        "universe_score",
+    )
+    return {key: instrument[key] for key in keys if key in instrument}
+
+
+def _attach_instrument_meta(signals: list[Signal], instrument_meta: dict) -> list[Signal]:
+    for signal in signals:
+        meta = dict(signal.meta or {})
+        for key, value in instrument_meta.items():
+            meta.setdefault(key, value)
+        signal.meta = meta
+    return signals
+
+
 def _latest_context(df: pd.DataFrame) -> tuple[pd.Series, pd.Series] | tuple[None, None]:
     clean = df.dropna(subset=["Close", "SMA20", "SMA50", "SMA200", "RSI14", "ATR14"])
     if len(clean) < 2:
@@ -141,6 +165,14 @@ def score_signal(signal: Signal, strategy_config: dict) -> Signal:
         volume_points = -6.0
     score += volume_points
 
+    universe_points = 0.0
+    if bool(strategy_config.get("universe_score_enabled", True)):
+        universe_score = _safe_float(meta.get("universe_score"))
+        if universe_score is not None:
+            max_bonus = float(strategy_config.get("universe_score_max_bonus", 5.0))
+            universe_points = _clamp((universe_score - 3.0) * 2.0, -2.0, max_bonus)
+            score += universe_points
+
     cost_pct = (
         (signal.estimated_round_trip_cost / signal.notional) * 100.0
         if signal.notional > 0
@@ -163,7 +195,7 @@ def score_signal(signal: Signal, strategy_config: dict) -> Signal:
     signal.score_details = (
         f"strategia {strategy_bonus:+.1f}, trend {trend_points:+.1f}, "
         f"R/R {rr_points:+.1f}, RSI {rsi_points:+.1f}, rischio {risk_points:+.1f}, "
-        f"volumi {volume_points:+.1f}, costi {cost_points:+.1f}"
+        f"volumi {volume_points:+.1f}, universo {universe_points:+.1f}, costi {cost_points:+.1f}"
     )
     meta["score_breakdown"] = {
         "base": base,
@@ -173,6 +205,7 @@ def score_signal(signal: Signal, strategy_config: dict) -> Signal:
         "rsi": round(rsi_points, 2),
         "risk": round(risk_points, 2),
         "volume": round(volume_points, 2),
+        "universe": round(universe_points, 2),
         "cost": round(cost_points, 2),
         "risk_pct": round(risk_pct, 2),
         "cost_pct": round(cost_pct, 2),
@@ -190,20 +223,24 @@ def analyze_buy_signals(
     symbol = instrument["symbol"]
     name = instrument.get("name", symbol)
     instrument_type = instrument.get("type", "unknown")
+    instrument_meta = _instrument_meta(instrument)
     latest, previous = _latest_context(df)
 
     if latest is None or previous is None:
-        return [
-            Signal(
-                symbol=symbol,
-                name=name,
-                instrument_type=instrument_type,
-                action="WATCH",
-                strategy="data_quality",
-                date=today.isoformat(),
-                reason="Dati insufficienti per calcolare indicatori affidabili.",
-            )
-        ]
+        return _attach_instrument_meta(
+            [
+                Signal(
+                    symbol=symbol,
+                    name=name,
+                    instrument_type=instrument_type,
+                    action="WATCH",
+                    strategy="data_quality",
+                    date=today.isoformat(),
+                    reason="Dati insufficienti per calcolare indicatori affidabili.",
+                )
+            ],
+            instrument_meta,
+        )
 
     close = float(latest["Close"])
     high = float(latest["High"])
@@ -414,7 +451,10 @@ def analyze_buy_signals(
 
     if not signals:
         if watch_signals:
-            return sorted(watch_signals, key=lambda signal: signal.score or 0.0, reverse=True)[:2]
+            return _attach_instrument_meta(
+                sorted(watch_signals, key=lambda signal: signal.score or 0.0, reverse=True)[:2],
+                instrument_meta,
+            )
         signals.append(
             Signal(
                 symbol=symbol,
@@ -429,4 +469,4 @@ def analyze_buy_signals(
             )
         )
 
-    return signals
+    return _attach_instrument_meta(signals, instrument_meta)

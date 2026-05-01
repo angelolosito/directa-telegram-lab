@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
+from .currency import fx_rate_from_meta, price_to_base
 from .strategy import Signal
 
 
@@ -139,6 +140,12 @@ class PaperPortfolio:
         ).fetchone()
         return row is not None
 
+    def _row_meta(self, row: sqlite3.Row) -> dict:
+        try:
+            return json.loads(row["meta"] or "{}")
+        except Exception:
+            return {}
+
     def realized_monthly_pnl(self, reference_date: date) -> float:
         start = reference_date.replace(day=1).isoformat()
         end = reference_date.isoformat()
@@ -232,19 +239,24 @@ class PaperPortfolio:
         max_allocation = float(risk_cfg.get("max_allocation_per_trade", 500.0))
         available_cash = self.cash()
 
-        unit_risk = signal.entry - signal.stop
+        meta = signal.meta or {}
+        fx_rate = fx_rate_from_meta(meta)
+        unit_risk = (signal.entry - signal.stop) * fx_rate
         if unit_risk <= 0:
             signal.reason += " Rischio unitario non valido."
             return signal
 
+        entry_base = signal.entry * fx_rate
         qty_by_risk = int(risk_per_trade // unit_risk)
-        qty_by_allocation = max_affordable_quantity(signal.entry, available_cash, max_allocation, costs_cfg)
+        qty_by_allocation = max_affordable_quantity(entry_base, available_cash, max_allocation, costs_cfg)
         qty = max(0, min(qty_by_risk, qty_by_allocation))
 
-        notional = round(qty * signal.entry, 2) if qty > 0 else 0.0
+        notional = round(qty * entry_base, 2) if qty > 0 else 0.0
         signal.qty = qty
         signal.notional = notional
         signal.estimated_round_trip_cost = estimate_round_trip_cost(notional, costs_cfg) if qty > 0 else 0.0
+        meta["fx_to_base"] = fx_rate
+        signal.meta = meta
         return signal
 
     def open_position(self, signal: Signal) -> bool:
@@ -252,7 +264,7 @@ class PaperPortfolio:
             self.log_event("SKIP", "Quantità pari a zero: posizione non aperta.", signal.symbol, signal.to_dict())
             return False
 
-        notional = signal.qty * signal.entry
+        notional = signal.notional or price_to_base(signal.entry, signal.meta) * signal.qty
         commission = estimate_commission(notional, self.config["costs"])
         total_cost = notional + commission
         if self.cash() < total_cost:
@@ -367,8 +379,10 @@ class PaperPortfolio:
         qty = int(row["qty"])
         entry_price = float(row["entry_price"])
         entry_commission = float(row["entry_commission"])
-        gross_pnl = (exit_price - entry_price) * qty
-        exit_notional = exit_price * qty
+        meta = self._row_meta(row)
+        fx_rate = fx_rate_from_meta(meta)
+        gross_pnl = (exit_price - entry_price) * qty * fx_rate
+        exit_notional = exit_price * qty * fx_rate
         exit_commission = estimate_commission(exit_notional, self.config["costs"])
         net_pnl = gross_pnl - entry_commission - exit_commission
         cash_in = exit_notional - exit_commission
@@ -468,30 +482,27 @@ class PaperPortfolio:
         open_market_value = 0.0
         unrealized_pnl = 0.0
         open_risk_to_stop = 0.0
+        open_exit_commissions = 0.0
         for row in open_rows:
             qty = int(row["qty"])
             entry_price = float(row["entry_price"])
             stop = float(row["stop"])
             entry_commission = float(row["entry_commission"])
             close = self._latest_close(row["symbol"], market_data) or entry_price
+            meta = self._row_meta(row)
 
-            exit_notional = close * qty
+            exit_notional = price_to_base(close, meta) * qty
             exit_commission = estimate_commission(exit_notional, self.config["costs"])
             open_market_value += exit_notional
-            unrealized_pnl += ((close - entry_price) * qty) - entry_commission - exit_commission
+            open_exit_commissions += exit_commission
+            unrealized_pnl += (price_to_base(close - entry_price, meta) * qty) - entry_commission - exit_commission
 
-            stop_notional = stop * qty
+            stop_notional = price_to_base(stop, meta) * qty
             stop_exit_commission = estimate_commission(stop_notional, self.config["costs"])
-            trade_risk = ((entry_price - stop) * qty) + entry_commission + stop_exit_commission
+            trade_risk = (price_to_base(entry_price - stop, meta) * qty) + entry_commission + stop_exit_commission
             open_risk_to_stop += max(0.0, trade_risk)
 
-        equity = cash + open_market_value - sum(
-            estimate_commission(
-                (self._latest_close(row["symbol"], market_data) or float(row["entry_price"])) * int(row["qty"]),
-                self.config["costs"],
-            )
-            for row in open_rows
-        )
+        equity = cash + open_market_value - open_exit_commissions
         realized_pnl = float(closed_row["realized"])
         initial_capital = float(initial_row["initial_capital"]) if initial_row else float(
             self.config["risk"].get("initial_capital", 1000.0)

@@ -1,176 +1,626 @@
+# Universo di ricerca curato, non lista di acquisto automatico.
 # Ticker in formato Yahoo Finance. Per Borsa Italiana usa spesso suffisso .MI.
 watchlist:
   - symbol: SWDA.MI
     name: iShares Core MSCI World UCITS ETF
     type: etf
+    region: global
+    sector: global_equity
+    role: core_global
+    priority: core
+    currency: EUR
+    benchmark: SWDA.MI
+    universe_score: 5
     enabled: true
 
   - symbol: CSSPX.MI
     name: iShares Core S&P 500 UCITS ETF
     type: etf
+    region: us
+    sector: broad_market
+    role: core_us
+    priority: core
+    currency: EUR
+    benchmark: SWDA.MI
+    universe_score: 5
     enabled: true
 
   - symbol: EQQQ.MI
     name: Invesco EQQQ Nasdaq-100 UCITS ETF
     type: etf
+    region: us_growth
+    sector: technology_growth
+    role: growth_benchmark
+    priority: core
+    currency: EUR
+    benchmark: CSSPX.MI
+    universe_score: 4
     enabled: true
 
   - symbol: EIMI.MI
     name: iShares Core MSCI Emerging Markets IMI UCITS ETF
     type: etf
+    region: global
+    sector: emerging_markets
+    role: satellite_emerging
+    priority: satellite
+    currency: EUR
+    benchmark: SWDA.MI
+    universe_score: 3
     enabled: true
 
   - symbol: EXW1.MI
     name: iShares Core EURO STOXX 50 UCITS ETF
     type: etf
+    region: europe
+    sector: broad_market
+    role: europe_benchmark
+    priority: core
+    currency: EUR
+    benchmark: SWDA.MI
+    universe_score: 4
     enabled: true
 
-  - symbol: ENEL.MI
-    name: Enel
+  - symbol: NVDA
+    name: NVIDIA
     type: stock
+    region: us_growth
+    sector: semiconductors
+    role: ai_leader
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 5
     enabled: true
 
-  - symbol: ENI.MI
-    name: Eni
+  - symbol: MSFT
+    name: Microsoft
     type: stock
+    region: us_growth
+    sector: software_cloud
+    role: compounder
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 5
     enabled: true
 
-  - symbol: ISP.MI
-    name: Intesa Sanpaolo
+  - symbol: AAPL
+    name: Apple
     type: stock
+    region: us_growth
+    sector: consumer_technology
+    role: quality_mega_cap
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 5
     enabled: true
 
-  - symbol: UCG.MI
-    name: UniCredit
+  - symbol: GOOGL
+    name: Alphabet
     type: stock
+    region: us_growth
+    sector: digital_platforms
+    role: quality_mega_cap
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 5
     enabled: true
 
-  - symbol: LDO.MI
-    name: Leonardo
+  - symbol: AMZN
+    name: Amazon
     type: stock
+    region: us_growth
+    sector: ecommerce_cloud
+    role: quality_growth
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 5
+    enabled: true
+
+  - symbol: META
+    name: Meta Platforms
+    type: stock
+    region: us_growth
+    sector: digital_platforms
+    role: quality_growth
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: AVGO
+    name: Broadcom
+    type: stock
+    region: us_growth
+    sector: semiconductors
+    role: ai_infrastructure
+    priority: leader
+    currency: USD
+    benchmark: EQQQ.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: COST
+    name: Costco
+    type: stock
+    region: us
+    sector: consumer_staples
+    role: defensive_compounder
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: WMT
+    name: Walmart
+    type: stock
+    region: us
+    sector: consumer_staples
+    role: defensive_compounder
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: V
+    name: Visa
+    type: stock
+    region: us
+    sector: payments
+    role: compounder
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 5
+    enabled: true
+
+  - symbol: MA
+    name: Mastercard
+    type: stock
+    region: us
+    sector: payments
+    role: compounder
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 5
+    enabled: true
+
+  - symbol: JPM
+    name: JPMorgan Chase
+    type: stock
+    region: us
+    sector: financials
+    role: financial_leader
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: BRK-B
+    name: Berkshire Hathaway
+    type: stock
+    region: us
+    sector: diversified_financials
+    role: quality_defensive
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: LLY
+    name: Eli Lilly
+    type: stock
+    region: us
+    sector: healthcare
+    role: healthcare_growth
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: UNH
+    name: UnitedHealth
+    type: stock
+    region: us
+    sector: healthcare
+    role: healthcare_quality
+    priority: leader
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: JNJ
+    name: Johnson & Johnson
+    type: stock
+    region: us
+    sector: healthcare
+    role: defensive_quality
+    priority: satellite
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: ABBV
+    name: AbbVie
+    type: stock
+    region: us
+    sector: healthcare
+    role: defensive_quality
+    priority: satellite
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: CAT
+    name: Caterpillar
+    type: stock
+    region: us
+    sector: industrials
+    role: cyclical_leader
+    priority: satellite
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: XOM
+    name: Exxon Mobil
+    type: stock
+    region: us
+    sector: energy
+    role: cyclical_leader
+    priority: satellite
+    currency: USD
+    benchmark: CSSPX.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: ASML.AS
+    name: ASML Holding
+    type: stock
+    region: europe
+    sector: semiconductors
+    role: european_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 5
+    enabled: true
+
+  - symbol: SAP.DE
+    name: SAP
+    type: stock
+    region: europe
+    sector: software
+    role: european_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 5
+    enabled: true
+
+  - symbol: SIE.DE
+    name: Siemens
+    type: stock
+    region: europe
+    sector: industrials
+    role: industrial_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: AIR.PA
+    name: Airbus
+    type: stock
+    region: europe
+    sector: aerospace
+    role: industrial_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: SU.PA
+    name: Schneider Electric
+    type: stock
+    region: europe
+    sector: electrification
+    role: industrial_compounder
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: MC.PA
+    name: LVMH
+    type: stock
+    region: europe
+    sector: luxury
+    role: quality_compounder
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: OR.PA
+    name: L'Oreal
+    type: stock
+    region: europe
+    sector: consumer_staples
+    role: defensive_compounder
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: RMS.PA
+    name: Hermes
+    type: stock
+    region: europe
+    sector: luxury
+    role: quality_compounder
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: TTE.PA
+    name: TotalEnergies
+    type: stock
+    region: europe
+    sector: energy
+    role: cyclical_leader
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: SAN.PA
+    name: Sanofi
+    type: stock
+    region: europe
+    sector: healthcare
+    role: defensive_quality
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: NOVO-B.CO
+    name: Novo Nordisk
+    type: stock
+    region: europe
+    sector: healthcare
+    role: healthcare_growth
+    priority: leader
+    currency: DKK
+    benchmark: EXW1.MI
+    universe_score: 4
+    enabled: true
+
+  - symbol: NESN.SW
+    name: Nestle
+    type: stock
+    region: europe
+    sector: consumer_staples
+    role: defensive_quality
+    priority: satellite
+    currency: CHF
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: NOVN.SW
+    name: Novartis
+    type: stock
+    region: europe
+    sector: healthcare
+    role: defensive_quality
+    priority: satellite
+    currency: CHF
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: ROG.SW
+    name: Roche
+    type: stock
+    region: europe
+    sector: healthcare
+    role: defensive_quality
+    priority: satellite
+    currency: CHF
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: UBSG.SW
+    name: UBS Group
+    type: stock
+    region: europe
+    sector: financials
+    role: financial_leader
+    priority: satellite
+    currency: CHF
+    benchmark: EXW1.MI
+    universe_score: 3
     enabled: true
 
   - symbol: RACE.MI
     name: Ferrari
     type: stock
+    region: italy
+    sector: luxury_auto
+    role: italian_global_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 5
     enabled: true
 
-  - symbol: STLAM.MI
-    name: Stellantis
+  - symbol: ENEL.MI
+    name: Enel
     type: stock
+    region: italy
+    sector: utilities
+    role: defensive_income
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: ENI.MI
+    name: Eni
+    type: stock
+    region: italy
+    sector: energy
+    role: cyclical_income
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: ISP.MI
+    name: Intesa Sanpaolo
+    type: stock
+    region: italy
+    sector: financials
+    role: italian_financial_leader
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: UCG.MI
+    name: UniCredit
+    type: stock
+    region: italy
+    sector: financials
+    role: italian_financial_leader
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
     enabled: true
 
   - symbol: G.MI
     name: Assicurazioni Generali
     type: stock
+    region: italy
+    sector: insurance
+    role: defensive_financial
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
     enabled: true
 
-  - symbol: A2A.MI
-    name: A2A
+  - symbol: LDO.MI
+    name: Leonardo
     type: stock
-    enabled: true
-
-  - symbol: AMP.MI
-    name: Amplifon
-    type: stock
-    enabled: true
-
-  - symbol: AZM.MI
-    name: Azimut
-    type: stock
-    enabled: true
-
-  - symbol: BAMI.MI
-    name: Banco BPM
-    type: stock
-    enabled: true
-
-  - symbol: BMED.MI
-    name: Banca Mediolanum
-    type: stock
-    enabled: true
-
-  - symbol: BMPS.MI
-    name: Banca Monte dei Paschi di Siena
-    type: stock
-    enabled: true
-
-  - symbol: BPE.MI
-    name: BPER Banca
-    type: stock
-    enabled: true
-
-  - symbol: BC.MI
-    name: Brunello Cucinelli
-    type: stock
-    enabled: true
-
-  - symbol: BZU.MI
-    name: Buzzi
-    type: stock
-    enabled: true
-
-  - symbol: CPR.MI
-    name: Campari
-    type: stock
-    enabled: true
-
-  - symbol: DIA.MI
-    name: DiaSorin
-    type: stock
-    enabled: true
-
-  - symbol: FBK.MI
-    name: FinecoBank
-    type: stock
-    enabled: true
-
-  - symbol: HER.MI
-    name: Hera
-    type: stock
-    enabled: true
-
-  - symbol: IG.MI
-    name: Italgas
-    type: stock
-    enabled: true
-
-  - symbol: MB.MI
-    name: Mediobanca
-    type: stock
-    enabled: true
-
-  - symbol: MONC.MI
-    name: Moncler
-    type: stock
-    enabled: true
-
-  - symbol: NEXI.MI
-    name: Nexi
-    type: stock
-    enabled: true
-
-  - symbol: PIRC.MI
-    name: Pirelli
-    type: stock
-    enabled: true
-
-  - symbol: PST.MI
-    name: Poste Italiane
-    type: stock
+    region: italy
+    sector: aerospace_defense
+    role: momentum_cyclical
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
     enabled: true
 
   - symbol: PRY.MI
     name: Prysmian
     type: stock
-    enabled: true
-
-  - symbol: REC.MI
-    name: Recordati
-    type: stock
+    region: italy
+    sector: electrification
+    role: italian_global_leader
+    priority: leader
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 4
     enabled: true
 
   - symbol: TRN.MI
     name: Terna
     type: stock
+    region: italy
+    sector: utilities
+    role: defensive_income
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: PST.MI
+    name: Poste Italiane
+    type: stock
+    region: italy
+    sector: financial_services
+    role: defensive_income
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: FBK.MI
+    name: FinecoBank
+    type: stock
+    region: italy
+    sector: financials
+    role: quality_financial
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: MONC.MI
+    name: Moncler
+    type: stock
+    region: italy
+    sector: luxury
+    role: quality_compounder
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
+    enabled: true
+
+  - symbol: CPR.MI
+    name: Campari
+    type: stock
+    region: italy
+    sector: consumer_staples
+    role: quality_compounder
+    priority: satellite
+    currency: EUR
+    benchmark: EXW1.MI
+    universe_score: 3
     enabled: true

@@ -10,6 +10,11 @@ from zoneinfo import ZoneInfo
 
 from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
+from src.currency import (
+    configured_currency_pairs,
+    enrich_watchlist_with_fx,
+    latest_fx_rates,
+)
 from src.data_provider import DataProviderError, fetch_daily_data
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import configured_benchmarks, evaluate_market_regime
@@ -136,6 +141,7 @@ def fetch_market_regime_data(
 
 def fetch_relative_strength_data(
     cfg: dict,
+    watchlist: list[dict],
     known_market_data: dict,
     timezone: str,
     lookback_days: int,
@@ -145,7 +151,7 @@ def fetch_relative_strength_data(
 ) -> tuple[dict, list[str]]:
     relative_data = {}
     errors: list[str] = []
-    benchmarks = configured_relative_strength_benchmarks(cfg)
+    benchmarks = configured_relative_strength_benchmarks(cfg, watchlist)
     if not benchmarks:
         return relative_data, errors
 
@@ -180,6 +186,43 @@ def fetch_relative_strength_data(
         except Exception as e:  # noqa: BLE001
             errors.append(f"{symbol}: errore imprevisto nella forza relativa: {e}")
     return relative_data, errors
+
+
+def fetch_currency_data(
+    cfg: dict,
+    watchlist: list[dict],
+    timezone: str,
+    request_timeout: int,
+    download_retries: int,
+    process_timeout: int,
+) -> tuple[dict, list[str]]:
+    fx_data = {}
+    errors: list[str] = []
+    pairs = configured_currency_pairs(watchlist, cfg)
+    if not pairs:
+        return fx_data, errors
+
+    currency_cfg = cfg.get("currency", {})
+    lookback_days = int(currency_cfg.get("lookback_days", 14))
+
+    for pair in pairs:
+        symbol = pair["symbol"]
+        try:
+            df = fetch_daily_data(
+                symbol,
+                lookback_days=lookback_days,
+                timezone=timezone,
+                request_timeout=request_timeout,
+                retries=download_retries,
+                process_timeout=process_timeout,
+            )
+            fx_data[symbol] = df
+        except DataProviderError as e:
+            errors.append(str(e))
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{symbol}: errore imprevisto nel cambio valuta: {e}")
+
+    return fx_data, errors
 
 
 def main() -> int:
@@ -248,6 +291,21 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{symbol}: errore imprevisto: {e}")
 
+        fx_data, fx_errors = fetch_currency_data(
+            cfg,
+            watchlist,
+            timezone,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(fx_errors)
+        fx_pairs = configured_currency_pairs(watchlist, cfg)
+        fx_rates, fx_rate_errors = latest_fx_rates(fx_data, fx_pairs, cfg)
+        errors.extend(fx_rate_errors)
+        active_watchlist, fx_watchlist_errors = enrich_watchlist_with_fx(watchlist, fx_rates, cfg)
+        errors.extend(fx_watchlist_errors)
+
         regime_data, regime_errors = fetch_market_regime_data(
             cfg,
             market_data,
@@ -260,6 +318,7 @@ def main() -> int:
         errors.extend(regime_errors)
         relative_strength_data, relative_errors = fetch_relative_strength_data(
             cfg,
+            active_watchlist,
             market_data,
             timezone,
             lookback_days,
@@ -270,7 +329,7 @@ def main() -> int:
         errors.extend(relative_errors)
 
         result = run_backtest(
-            watchlist,
+            active_watchlist,
             market_data,
             cfg,
             regime_data=regime_data,
@@ -326,6 +385,21 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{symbol}: errore imprevisto: {e}")
 
+        fx_data, fx_errors = fetch_currency_data(
+            cfg,
+            watchlist,
+            timezone,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(fx_errors)
+        fx_pairs = configured_currency_pairs(watchlist, cfg)
+        fx_rates, fx_rate_errors = latest_fx_rates(fx_data, fx_pairs, cfg)
+        errors.extend(fx_rate_errors)
+        active_watchlist, fx_watchlist_errors = enrich_watchlist_with_fx(watchlist, fx_rates, cfg)
+        errors.extend(fx_watchlist_errors)
+
         regime_data, regime_errors = fetch_market_regime_data(
             cfg,
             market_data,
@@ -338,6 +412,7 @@ def main() -> int:
         errors.extend(regime_errors)
         relative_strength_data, relative_errors = fetch_relative_strength_data(
             cfg,
+            active_watchlist,
             market_data,
             timezone,
             lookback_days,
@@ -358,7 +433,7 @@ def main() -> int:
         learning_enabled = bool(cfg.get("learning", {}).get("enabled", True))
         learning_stats = load_learning_stats(app.signal_evaluations_csv, cfg) if learning_enabled else {}
 
-        for instrument in watchlist:
+        for instrument in active_watchlist:
             symbol = instrument["symbol"]
             df = market_data.get(symbol)
             if df is None:

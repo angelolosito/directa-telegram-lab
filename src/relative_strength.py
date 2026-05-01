@@ -29,7 +29,7 @@ class RelativeStrengthResult:
         }
 
 
-def configured_relative_strength_benchmarks(config: dict) -> list[dict]:
+def configured_relative_strength_benchmarks(config: dict, watchlist: list[dict] | None = None) -> list[dict]:
     cfg = config.get("relative_strength", {})
     if not cfg.get("enabled", False):
         return []
@@ -39,6 +39,13 @@ def configured_relative_strength_benchmarks(config: dict) -> list[dict]:
     if default:
         symbols.append(default)
     for symbol in (cfg.get("benchmark_by_type") or {}).values():
+        if symbol:
+            symbols.append(symbol)
+    for symbol in (cfg.get("benchmark_by_region") or {}).values():
+        if symbol:
+            symbols.append(symbol)
+    for instrument in watchlist or []:
+        symbol = instrument.get("benchmark")
         if symbol:
             symbols.append(symbol)
 
@@ -53,6 +60,13 @@ def benchmark_for_instrument(instrument: dict, config: dict) -> str | None:
     cfg = config.get("relative_strength", {})
     if not cfg.get("enabled", False):
         return None
+    instrument_benchmark = instrument.get("benchmark")
+    if instrument_benchmark:
+        return instrument_benchmark
+    region = instrument.get("region")
+    by_region = cfg.get("benchmark_by_region") or {}
+    if region and by_region.get(region):
+        return by_region[region]
     instrument_type = instrument.get("type", "unknown")
     by_type = cfg.get("benchmark_by_type") or {}
     return by_type.get(instrument_type) or cfg.get("default_benchmark")

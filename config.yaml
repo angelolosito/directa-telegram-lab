@@ -15,6 +15,14 @@ data:
   process_timeout_seconds: 20
   download_retries: 0
 
+currency:
+  lookback_days: 14
+  fx_to_base_symbols:
+    USD: USDEUR=X
+    CHF: CHFEUR=X
+    DKK: DKKEUR=X
+    GBP: GBPEUR=X
+
 backtest:
   lookback_days: 900
   min_rows_required: 220
@@ -43,6 +51,12 @@ relative_strength:
   benchmark_by_type:
     stock: EXW1.MI
     etf: SWDA.MI
+  benchmark_by_region:
+    global: SWDA.MI
+    us: CSSPX.MI
+    us_growth: EQQQ.MI
+    europe: EXW1.MI
+    italy: EXW1.MI
   weak_threshold_pct: -2.0
   strong_threshold_pct: 2.0
   very_strong_threshold_pct: 5.0
@@ -98,6 +112,8 @@ strategy:
   rsi_max_breakout: 75
   breakout_lookback_days: 20
   volume_breakout_multiplier: 1.10
+  universe_score_enabled: true
+  universe_score_max_bonus: 5
   near_breakout_pct: 1.5
   setup_watch_min_score: 50
   pullback_lookback_days: 8
