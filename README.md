@@ -18,6 +18,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
+- Confronta ogni candidato con un benchmark di riferimento e premia solo gli strumenti con buona forza relativa.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -48,6 +49,7 @@ directa-telegram-lab/
 │   ├── market_regime.py
 │   ├── opportunity.py
 │   ├── paper_portfolio.py
+│   ├── relative_strength.py
 │   ├── report.py
 │   ├── signal_journal.py
 │   ├── strategy.py
@@ -160,6 +162,16 @@ learning:
   adaptive_penalty_points: 6
   adaptive_bonus_points: 3
 
+relative_strength:
+  enabled: true
+  lookback_sessions: 60
+  default_benchmark: SWDA.MI
+  benchmark_by_type:
+    stock: EXW1.MI
+    etf: SWDA.MI
+  weak_threshold_pct: -2.0
+  strong_threshold_pct: 2.0
+
 market_regime:
   enabled: true
   neutral_score_boost: 5
@@ -199,6 +211,7 @@ strategy:
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 `learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.
+`relative_strength` confronta titolo/ETF con un benchmark: se uno strumento resta debole rispetto al mercato, il suo score viene ridotto anche se il setup tecnico sembra valido.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 

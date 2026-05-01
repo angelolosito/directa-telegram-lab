@@ -15,6 +15,7 @@ from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
+from src.relative_strength import apply_relative_strength, configured_relative_strength_benchmarks
 from src.report import build_daily_message, save_markdown_report
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
@@ -133,6 +134,54 @@ def fetch_market_regime_data(
     return regime_data, errors
 
 
+def fetch_relative_strength_data(
+    cfg: dict,
+    known_market_data: dict,
+    timezone: str,
+    lookback_days: int,
+    request_timeout: int,
+    download_retries: int,
+    process_timeout: int,
+) -> tuple[dict, list[str]]:
+    relative_data = {}
+    errors: list[str] = []
+    benchmarks = configured_relative_strength_benchmarks(cfg)
+    if not benchmarks:
+        return relative_data, errors
+
+    relative_cfg = cfg.get("relative_strength", {})
+    relative_lookback_days = int(relative_cfg.get("lookback_days", max(lookback_days, 220)))
+    min_rows = int(relative_cfg.get("min_rows_required", int(relative_cfg.get("lookback_sessions", 60)) + 1))
+
+    for benchmark in benchmarks:
+        symbol = benchmark["symbol"]
+        if symbol in known_market_data:
+            df = known_market_data[symbol]
+            if len(df.dropna(subset=["Close"])) < min_rows:
+                errors.append(f"{symbol}: storico insufficiente per forza relativa.")
+            else:
+                relative_data[symbol] = df
+            continue
+        try:
+            df = fetch_daily_data(
+                symbol,
+                lookback_days=relative_lookback_days,
+                timezone=timezone,
+                request_timeout=request_timeout,
+                retries=download_retries,
+                process_timeout=process_timeout,
+            )
+            if len(df.dropna(subset=["Close"])) < min_rows:
+                errors.append(f"{symbol}: storico insufficiente per forza relativa.")
+                continue
+            relative_data[symbol] = df
+        except DataProviderError as e:
+            errors.append(str(e))
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{symbol}: errore imprevisto nella forza relativa: {e}")
+    return relative_data, errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Directa Telegram Trading Lab")
     parser.add_argument("--base-dir", default=".", help="Project base directory")
@@ -209,8 +258,24 @@ def main() -> int:
             process_timeout,
         )
         errors.extend(regime_errors)
+        relative_strength_data, relative_errors = fetch_relative_strength_data(
+            cfg,
+            market_data,
+            timezone,
+            lookback_days,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(relative_errors)
 
-        result = run_backtest(watchlist, market_data, cfg, regime_data=regime_data)
+        result = run_backtest(
+            watchlist,
+            market_data,
+            cfg,
+            regime_data=regime_data,
+            relative_strength_data=relative_strength_data,
+        )
         result.errors.extend(errors)
         report = format_backtest_report(result)
         if cfg["run"].get("save_reports", True):
@@ -271,6 +336,16 @@ def main() -> int:
             process_timeout,
         )
         errors.extend(regime_errors)
+        relative_strength_data, relative_errors = fetch_relative_strength_data(
+            cfg,
+            market_data,
+            timezone,
+            lookback_days,
+            request_timeout,
+            download_retries,
+            process_timeout,
+        )
+        errors.extend(relative_errors)
         market_regime = evaluate_market_regime(regime_data, cfg, min_signal_score, today)
         min_signal_score = market_regime.active_min_signal_score
 
@@ -300,6 +375,10 @@ def main() -> int:
                 if signal.qty <= 0:
                     signal.action = "WATCH"
                     signal.reason += " Segnale non eseguito in paper: capitale/size non sufficiente con i limiti attuali."
+                    all_logged_signals.append(signal)
+                    continue
+                signal = apply_relative_strength(signal, instrument, df, relative_strength_data, cfg)
+                if signal.action != "BUY":
                     all_logged_signals.append(signal)
                     continue
                 signal = review_opportunity(signal, market_regime, cfg)

@@ -13,6 +13,7 @@ from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
+from src.relative_strength import apply_relative_strength
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 
@@ -76,6 +77,19 @@ def sample_config() -> dict:
             "adaptive_avg_return_good_pct": 0.5,
             "adaptive_penalty_points": 6.0,
             "adaptive_bonus_points": 3.0,
+        },
+        "relative_strength": {
+            "enabled": True,
+            "lookback_sessions": 3,
+            "default_benchmark": "BENCH.MI",
+            "benchmark_by_type": {"stock": "BENCH.MI", "etf": "BENCH.MI"},
+            "weak_threshold_pct": -2.0,
+            "strong_threshold_pct": 2.0,
+            "very_strong_threshold_pct": 5.0,
+            "penalty_points": 8.0,
+            "bonus_points": 4.0,
+            "strong_bonus_points": 7.0,
+            "block_when_weak": False,
         },
         "backtest": {"max_new_positions_per_day": 1},
     }
@@ -201,6 +215,74 @@ class MarketRegimeTests(unittest.TestCase):
         self.assertEqual(regime.state, "risk_off")
         self.assertFalse(regime.new_positions_allowed)
         self.assertEqual(regime.active_min_signal_score, 75.0)
+
+
+class RelativeStrengthTests(unittest.TestCase):
+    def test_relative_strength_penalizes_lagging_signal(self) -> None:
+        cfg = sample_config()
+        dates = pd.date_range("2026-01-01", periods=5, freq="D")
+        instrument_df = pd.DataFrame({"Close": [100.0, 100.0, 99.0, 99.0, 99.0]}, index=dates)
+        benchmark_df = pd.DataFrame({"Close": [100.0, 101.0, 103.0, 105.0, 106.0]}, index=dates)
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-01-05",
+            price=99.0,
+            entry=99.0,
+            stop=95.0,
+            target=107.0,
+            reward_risk=2.0,
+            score=75.0,
+            score_details="base tecnico",
+        )
+
+        reviewed = apply_relative_strength(
+            signal,
+            {"symbol": "TEST.MI", "name": "Test", "type": "stock"},
+            instrument_df,
+            {"BENCH.MI": benchmark_df},
+            cfg,
+        )
+
+        self.assertEqual(reviewed.score, 67.0)
+        self.assertEqual((reviewed.meta or {})["relative_strength"]["state"], "weak")
+        self.assertIn("Forza relativa debole", reviewed.reason)
+
+    def test_relative_strength_rewards_leader_signal(self) -> None:
+        cfg = sample_config()
+        dates = pd.date_range("2026-01-01", periods=5, freq="D")
+        instrument_df = pd.DataFrame({"Close": [100.0, 103.0, 106.0, 109.0, 112.0]}, index=dates)
+        benchmark_df = pd.DataFrame({"Close": [100.0, 100.5, 101.0, 101.5, 102.0]}, index=dates)
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-01-05",
+            price=112.0,
+            entry=112.0,
+            stop=107.0,
+            target=122.0,
+            reward_risk=2.0,
+            score=75.0,
+            score_details="base tecnico",
+        )
+
+        reviewed = apply_relative_strength(
+            signal,
+            {"symbol": "TEST.MI", "name": "Test", "type": "stock"},
+            instrument_df,
+            {"BENCH.MI": benchmark_df},
+            cfg,
+        )
+
+        self.assertEqual(reviewed.score, 82.0)
+        self.assertEqual((reviewed.meta or {})["relative_strength"]["state"], "very_strong")
+        self.assertIn("Forza relativa favorevole", reviewed.reason)
 
 
 class OpportunityReviewTests(unittest.TestCase):

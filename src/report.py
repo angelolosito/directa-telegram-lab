@@ -49,6 +49,21 @@ def _learning_line(signal: Signal) -> str:
     )
 
 
+def _relative_strength(signal: Signal) -> dict:
+    relative = (signal.meta or {}).get("relative_strength", {})
+    return relative if isinstance(relative, dict) else {}
+
+
+def _relative_strength_line(signal: Signal) -> str:
+    relative = _relative_strength(signal)
+    if not relative or relative.get("relative_strength_pct") is None:
+        return ""
+    return (
+        f"Forza relativa: {relative.get('state')} "
+        f"{relative.get('relative_strength_pct'):+.2f}% vs {relative.get('benchmark_symbol')}\n"
+    )
+
+
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
         return (
@@ -58,6 +73,7 @@ def format_signal(signal: Signal) -> str:
             f"Score: {_format_optional_float(signal.score, 1)}/100\n"
             f"{_opportunity_line(signal)}"
             f"{_learning_line(signal)}"
+            f"{_relative_strength_line(signal)}"
             f"Prezzo: {signal.price:.4f} €\n"
             f"Entry simulata: {signal.entry:.4f} €\n"
             f"Stop: {signal.stop:.4f} €\n"
@@ -92,11 +108,17 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         if feedback.get("adjustment") is not None
         else ""
     )
+    relative = _relative_strength(signal)
+    relative_text = (
+        f" | RS {relative.get('relative_strength_pct'):+.1f}%"
+        if relative.get("relative_strength_pct") is not None
+        else ""
+    )
     return (
         f"{rank}. <b>{signal.symbol}</b> {signal.name} | "
         f"score {_format_optional_float(signal.score, 1)}/100 | "
         f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
-        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}"
+        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}{relative_text}"
     )
 
 

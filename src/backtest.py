@@ -8,6 +8,7 @@ import pandas as pd
 from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
 from .market_regime import evaluate_market_regime
 from .opportunity import review_opportunity
+from .relative_strength import apply_relative_strength
 from .strategy import Signal, analyze_buy_signals, score_signal
 
 
@@ -179,6 +180,7 @@ def run_backtest(
     market_data: dict[str, pd.DataFrame],
     config: dict,
     regime_data: dict[str, pd.DataFrame] | None = None,
+    relative_strength_data: dict[str, pd.DataFrame] | None = None,
 ) -> BacktestResult:
     risk_cfg = config["risk"]
     costs_cfg = config["costs"]
@@ -307,6 +309,10 @@ def run_backtest(
 
                 instrument = instruments_by_symbol.get(symbol, {"symbol": symbol, "name": symbol, "type": "unknown"})
                 df_slice = df.loc[:day_ts]
+                relative_data_slice = {
+                    relative_symbol: relative_df.loc[:day_ts]
+                    for relative_symbol, relative_df in (relative_strength_data or {}).items()
+                }
                 signals = analyze_buy_signals(instrument, df_slice, strategy_cfg, day)
                 for signal in signals:
                     if signal.action != "BUY":
@@ -314,6 +320,9 @@ def run_backtest(
                     signal = _size_signal(signal, cash, risk_cfg, costs_cfg)
                     signal = score_signal(signal, strategy_cfg)
                     if signal.qty <= 0:
+                        continue
+                    signal = apply_relative_strength(signal, instrument, df_slice, relative_data_slice, config)
+                    if signal.action != "BUY":
                         continue
                     signal = review_opportunity(signal, market_regime, config)
                     if signal.action != "BUY":

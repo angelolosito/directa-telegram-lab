@@ -34,6 +34,23 @@ learning:
   adaptive_penalty_points: 6
   adaptive_bonus_points: 3
 
+relative_strength:
+  enabled: true
+  lookback_days: 220
+  lookback_sessions: 60
+  min_rows_required: 80
+  default_benchmark: SWDA.MI
+  benchmark_by_type:
+    stock: EXW1.MI
+    etf: SWDA.MI
+  weak_threshold_pct: -2.0
+  strong_threshold_pct: 2.0
+  very_strong_threshold_pct: 5.0
+  penalty_points: 8
+  bonus_points: 4
+  strong_bonus_points: 7
+  block_when_weak: false
+
 market_regime:
   enabled: true
   lookback_days: 360
