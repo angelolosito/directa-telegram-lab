@@ -15,6 +15,11 @@ data:
   process_timeout_seconds: 20
   download_retries: 0
 
+backtest:
+  lookback_days: 900
+  min_rows_required: 220
+  max_new_positions_per_day: 1
+
 risk:
   initial_capital: 1000.0
   risk_per_trade: 25.0

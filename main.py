@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
 from src.data_provider import DataProviderError, fetch_daily_data
 from src.paper_portfolio import PaperPortfolio
@@ -85,6 +86,8 @@ def main() -> int:
     parser.add_argument("--base-dir", default=".", help="Project base directory")
     parser.add_argument("--dry-run", action="store_true", help="Do not open new paper positions and do not send Telegram")
     parser.add_argument("--send-test", action="store_true", help="Send only a Telegram test message")
+    parser.add_argument("--backtest", action="store_true", help="Run a historical paper backtest and exit")
+    parser.add_argument("--backtest-days", type=int, default=None, help="Override backtest lookback days")
     args = parser.parse_args()
 
     app = load_config(args.base_dir)
@@ -96,6 +99,52 @@ def main() -> int:
 
     if args.send_test:
         notifier.send("✅ Test Directa Telegram Trading Lab riuscito.")
+        return 0
+
+    watchlist = load_watchlist(app.base_dir)
+    data_cfg = cfg.get("data", {})
+    request_timeout = int(data_cfg.get("request_timeout_seconds", 8))
+    download_retries = int(data_cfg.get("download_retries", 1))
+    process_timeout = int(data_cfg.get("process_timeout_seconds", max(request_timeout, 20)))
+
+    if args.backtest:
+        backtest_cfg = cfg.get("backtest", {})
+        lookback_days = int(
+            args.backtest_days
+            or backtest_cfg.get("lookback_days", max(int(cfg["run"].get("lookback_days", 430)), 900))
+        )
+        min_rows = int(backtest_cfg.get("min_rows_required", cfg["run"].get("min_rows_required", 220)))
+        market_data = {}
+        errors: list[str] = []
+
+        for instrument in watchlist:
+            symbol = instrument["symbol"]
+            try:
+                df = fetch_daily_data(
+                    symbol,
+                    lookback_days=lookback_days,
+                    timezone=timezone,
+                    request_timeout=request_timeout,
+                    retries=download_retries,
+                    process_timeout=process_timeout,
+                )
+                if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
+                    errors.append(f"{symbol}: storico insufficiente per backtest.")
+                    continue
+                market_data[symbol] = df
+            except DataProviderError as e:
+                errors.append(str(e))
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{symbol}: errore imprevisto: {e}")
+
+        result = run_backtest(watchlist, market_data, cfg)
+        result.errors.extend(errors)
+        report = format_backtest_report(result)
+        if cfg["run"].get("save_reports", True):
+            app.reports_dir.mkdir(parents=True, exist_ok=True)
+            path = app.reports_dir / f"backtest_{today.isoformat()}.md"
+            path.write_text(report, encoding="utf-8")
+        print(report)
         return 0
 
     dry_run = args.dry_run or bool(cfg["run"].get("dry_run_default", False))
@@ -111,7 +160,6 @@ def main() -> int:
         if app.database_path.exists():
             shutil.copy2(app.database_path, database_path)
 
-    watchlist = load_watchlist(app.base_dir)
     portfolio = PaperPortfolio(database_path, cfg)
 
     try:
@@ -119,10 +167,6 @@ def main() -> int:
         errors: list[str] = []
         min_rows = int(cfg["run"].get("min_rows_required", 220))
         lookback_days = int(cfg["run"].get("lookback_days", 430))
-        data_cfg = cfg.get("data", {})
-        request_timeout = int(data_cfg.get("request_timeout_seconds", 8))
-        download_retries = int(data_cfg.get("download_retries", 1))
-        process_timeout = int(data_cfg.get("process_timeout_seconds", max(request_timeout, 20)))
 
         for instrument in watchlist:
             symbol = instrument["symbol"]

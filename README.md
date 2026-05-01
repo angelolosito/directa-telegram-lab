@@ -59,6 +59,20 @@ python main.py --dry-run
 
 `--dry-run` usa una copia temporanea del database: mostra chiusure, trailing stop e nuovi segnali simulati, ma non salva modifiche in `state/`, `data/` o `reports/`.
 
+Per eseguire un backtest storico sulle regole attive:
+
+```bash
+python main.py --backtest
+```
+
+Il report viene stampato in console e, se `save_reports` è attivo, salvato in `reports/backtest_YYYY-MM-DD.md`.
+
+Per eseguire i test automatici:
+
+```bash
+python -m unittest discover -s tests
+```
+
 Per inviare Telegram in locale:
 
 ```bash
@@ -115,6 +129,11 @@ data:
   request_timeout_seconds: 6
   process_timeout_seconds: 20
   download_retries: 0
+
+backtest:
+  lookback_days: 900
+  min_rows_required: 220
+  max_new_positions_per_day: 1
 
 risk:
   initial_capital: 1000
