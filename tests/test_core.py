@@ -9,10 +9,11 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.backtest import run_backtest
+from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
-from src.signal_journal import append_signal_journal, update_signal_evaluations
+from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 
 
@@ -67,6 +68,14 @@ def sample_config() -> dict:
             "horizons_sessions": [2, 3],
             "primary_horizon_sessions": 2,
             "min_bucket_count": 1,
+            "adaptive_feedback_enabled": True,
+            "adaptive_min_samples": 2,
+            "adaptive_positive_rate_floor": 45.0,
+            "adaptive_avg_return_floor_pct": -0.5,
+            "adaptive_positive_rate_good": 58.0,
+            "adaptive_avg_return_good_pct": 0.5,
+            "adaptive_penalty_points": 6.0,
+            "adaptive_bonus_points": 3.0,
         },
         "backtest": {"max_new_positions_per_day": 1},
     }
@@ -372,6 +381,7 @@ class SignalJournalTests(unittest.TestCase):
                 cfg,
                 date(2026, 1, 5),
             )
+            report = build_learning_report(journal_path, evaluations_path, cfg)
             rows = pd.read_csv(evaluations_path)
 
         self.assertEqual(added, 1)
@@ -380,8 +390,68 @@ class SignalJournalTests(unittest.TestCase):
         self.assertEqual(second_summary["new_or_updated"], 0)
         self.assertEqual(summary["positive_rate"], 100.0)
         self.assertIn("trend_pullback|GO|B", summary["best_bucket"])
+        self.assertIn("Diario intelligente segnali", report)
+        self.assertIn("Setup migliori", report)
         self.assertEqual(len(rows), 2)
         self.assertIn("target_hit", set(rows["outcome"]))
+
+    def test_learning_feedback_penalizes_weak_signal_family(self) -> None:
+        cfg = sample_config()
+        evaluations = pd.DataFrame(
+            [
+                {
+                    "evaluation_id": f"weak-{idx}",
+                    "signal_id": f"sig-{idx}",
+                    "date": "2026-01-01",
+                    "symbol": "TEST.MI",
+                    "instrument_type": "stock",
+                    "strategy": "trend_pullback",
+                    "action": "BUY",
+                    "score": "72.0",
+                    "opportunity_decision": "GO",
+                    "opportunity_grade": "B",
+                    "market_regime": "risk_on",
+                    "horizon_sessions": "2",
+                    "entry_price": "10.0000",
+                    "end_date": "2026-01-03",
+                    "close_return_pct": "-1.20",
+                    "max_gain_pct": "0.30",
+                    "max_drawdown_pct": "-2.00",
+                    "hit_target": "false",
+                    "hit_stop": "true",
+                    "outcome": "stop_hit",
+                    "updated_at": "2026-01-03",
+                }
+                for idx in range(2)
+            ]
+        )
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-01-04",
+            price=10.2,
+            entry=10.2,
+            stop=9.8,
+            target=11.0,
+            reward_risk=2.0,
+            score=72.0,
+            score_details="base tecnico",
+            meta={"opportunity": {"decision": "GO", "grade": "B"}},
+        )
+
+        with TemporaryDirectory() as tmp:
+            evaluations_path = Path(tmp) / "signal_evaluations.csv"
+            evaluations.to_csv(evaluations_path, index=False)
+            stats = load_learning_stats(evaluations_path, cfg)
+
+        reviewed = apply_learning_feedback(signal, stats, {"state": "risk_on"}, cfg)
+
+        self.assertEqual(reviewed.score, 66.0)
+        self.assertEqual((reviewed.meta or {})["learning_feedback"]["verdict"], "weak")
+        self.assertIn("feedback diario -6.0", reviewed.score_details)
 
 
 class BacktestTests(unittest.TestCase):

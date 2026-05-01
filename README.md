@@ -17,6 +17,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
+- Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -79,6 +80,12 @@ Per eseguire i test automatici:
 
 ```bash
 python -m unittest discover -s tests
+```
+
+Per leggere il report del diario intelligente:
+
+```bash
+python main.py --learning-report
 ```
 
 Per inviare Telegram in locale:
@@ -148,6 +155,10 @@ learning:
   horizons_sessions: [5, 10, 20, 40]
   primary_horizon_sessions: 20
   min_bucket_count: 2
+  adaptive_feedback_enabled: true
+  adaptive_min_samples: 5
+  adaptive_penalty_points: 6
+  adaptive_bonus_points: 3
 
 market_regime:
   enabled: true
@@ -187,7 +198,7 @@ strategy:
 `market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile può bloccare nuovi ingressi paper.
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
-`learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio.
+`learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 

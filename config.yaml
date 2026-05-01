@@ -25,6 +25,14 @@ learning:
   horizons_sessions: [5, 10, 20, 40]
   primary_horizon_sessions: 20
   min_bucket_count: 2
+  adaptive_feedback_enabled: true
+  adaptive_min_samples: 5
+  adaptive_positive_rate_floor: 45
+  adaptive_avg_return_floor_pct: -0.5
+  adaptive_positive_rate_good: 58
+  adaptive_avg_return_good_pct: 0.5
+  adaptive_penalty_points: 6
+  adaptive_bonus_points: 3
 
 market_regime:
   enabled: true

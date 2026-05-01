@@ -11,11 +11,12 @@ from zoneinfo import ZoneInfo
 from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
 from src.data_provider import DataProviderError, fetch_daily_data
+from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
 from src.report import build_daily_message, save_markdown_report
-from src.signal_journal import append_signal_journal, update_signal_evaluations
+from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 from src.telegram_notifier import TelegramNotifier
 
@@ -139,6 +140,7 @@ def main() -> int:
     parser.add_argument("--send-test", action="store_true", help="Send only a Telegram test message")
     parser.add_argument("--backtest", action="store_true", help="Run a historical paper backtest and exit")
     parser.add_argument("--backtest-days", type=int, default=None, help="Override backtest lookback days")
+    parser.add_argument("--learning-report", action="store_true", help="Print the signal learning journal report and exit")
     args = parser.parse_args()
 
     app = load_config(args.base_dir)
@@ -150,6 +152,15 @@ def main() -> int:
 
     if args.send_test:
         notifier.send("✅ Test Directa Telegram Trading Lab riuscito.")
+        return 0
+
+    if args.learning_report:
+        report = build_learning_report(app.signal_journal_csv, app.signal_evaluations_csv, cfg)
+        if cfg["run"].get("save_reports", True):
+            app.reports_dir.mkdir(parents=True, exist_ok=True)
+            path = app.reports_dir / f"learning_{today.isoformat()}.md"
+            path.write_text(report, encoding="utf-8")
+        print(report)
         return 0
 
     watchlist = load_watchlist(app.base_dir)
@@ -269,6 +280,8 @@ def main() -> int:
 
         actionable_buy_signals: list[Signal] = []
         all_logged_signals: list[Signal] = []
+        learning_enabled = bool(cfg.get("learning", {}).get("enabled", True))
+        learning_stats = load_learning_stats(app.signal_evaluations_csv, cfg) if learning_enabled else {}
 
         for instrument in watchlist:
             symbol = instrument["symbol"]
@@ -293,6 +306,7 @@ def main() -> int:
                 if signal.action != "BUY":
                     all_logged_signals.append(signal)
                     continue
+                signal = apply_learning_feedback(signal, learning_stats, market_regime.to_dict(), cfg)
                 if signal.score is not None and signal.score < min_signal_score:
                     signal.action = "WATCH"
                     signal.reason += f" Segnale non eseguito in paper: score {signal.score:.1f} sotto soglia {min_signal_score:.1f}."
@@ -328,7 +342,6 @@ def main() -> int:
             else:
                 opened_signals.append(best_signal)
 
-        learning_enabled = bool(cfg.get("learning", {}).get("enabled", True))
         if not dry_run:
             append_signals_csv(app.signals_csv, all_logged_signals)
             if learning_enabled:

@@ -41,6 +41,7 @@ EVALUATION_FIELDNAMES = [
     "signal_id",
     "date",
     "symbol",
+    "instrument_type",
     "strategy",
     "action",
     "score",
@@ -247,6 +248,7 @@ def _evaluation_row(row: dict, df: pd.DataFrame, horizon: int, updated_at: date)
         "signal_id": row.get("signal_id", ""),
         "date": row.get("date", ""),
         "symbol": row.get("symbol", ""),
+        "instrument_type": row.get("instrument_type", ""),
         "strategy": row.get("strategy", ""),
         "action": row.get("action", ""),
         "score": row.get("score", ""),
@@ -365,3 +367,105 @@ def update_signal_evaluations(
     summary["new_or_updated"] = new_or_updated
     summary["journal_size"] = len(journal_rows)
     return summary
+
+
+def _bucket_key(row: dict, include_market: bool = True) -> str:
+    parts = [
+        row.get("instrument_type", "") or "unknown",
+        row.get("strategy", "") or "unknown",
+        row.get("opportunity_decision", "") or "no_decision",
+        row.get("opportunity_grade", "") or "no_grade",
+    ]
+    if include_market:
+        parts.append(row.get("market_regime", "") or "unknown_regime")
+    return "|".join(parts)
+
+
+def _bucket_stats(rows: list[dict], primary_horizon: int, min_bucket_count: int) -> list[dict]:
+    primary = [row for row in rows if str(row.get("horizon_sessions")) == str(primary_horizon)]
+    buckets: dict[str, list[float]] = {}
+    for row in primary:
+        value = _safe_float(row.get("close_return_pct"))
+        if value is None:
+            continue
+        buckets.setdefault(_bucket_key(row), []).append(value)
+
+    stats: list[dict] = []
+    for bucket, values in buckets.items():
+        if len(values) < min_bucket_count:
+            continue
+        positives = len([value for value in values if value > 0])
+        stats.append(
+            {
+                "bucket": bucket,
+                "count": len(values),
+                "positive_rate": round((positives / len(values)) * 100.0, 1),
+                "avg_close_return_pct": round(sum(values) / len(values), 2),
+                "best_return_pct": round(max(values), 2),
+                "worst_return_pct": round(min(values), 2),
+            }
+        )
+    return stats
+
+
+def build_learning_report(journal_path: Path, evaluations_path: Path, config: dict) -> str:
+    learning_cfg = config.get("learning", {})
+    primary_horizon = int(learning_cfg.get("primary_horizon_sessions", 20))
+    min_bucket_count = int(learning_cfg.get("min_bucket_count", 2))
+    journal_rows = _read_csv(journal_path)
+    evaluation_rows = _read_csv(evaluations_path)
+    summary = _summarize_evaluations(evaluation_rows, primary_horizon, min_bucket_count)
+    stats = _bucket_stats(evaluation_rows, primary_horizon, min_bucket_count)
+    best = sorted(stats, key=lambda row: row["avg_close_return_pct"], reverse=True)[:5]
+    weak = sorted(stats, key=lambda row: row["avg_close_return_pct"])[:5]
+    recent = sorted(
+        [row for row in evaluation_rows if str(row.get("horizon_sessions")) == str(primary_horizon)],
+        key=lambda row: (row.get("end_date", ""), row.get("symbol", "")),
+        reverse=True,
+    )[:10]
+
+    lines = [
+        "# Diario intelligente segnali",
+        "",
+        f"Segnali in memoria: {len(journal_rows)}",
+        f"Valutazioni totali: {len(evaluation_rows)}",
+        f"Orizzonte principale: {primary_horizon} sedute",
+        f"Valutazioni complete sull'orizzonte principale: {summary.get('completed', 0)}",
+        f"Tasso positivi: {summary.get('positive_rate', 'n/d')}%",
+        f"Rendimento medio: {summary.get('avg_close_return_pct', 'n/d')}%",
+        "",
+    ]
+
+    if best:
+        lines.extend(["## Setup migliori", ""])
+        for row in best:
+            lines.append(
+                f"- {row['bucket']}: {row['avg_close_return_pct']:+.2f}% medio, "
+                f"{row['positive_rate']:.1f}% positivi, n={row['count']}"
+            )
+        lines.append("")
+
+    if weak:
+        lines.extend(["## Setup più deboli", ""])
+        for row in weak:
+            lines.append(
+                f"- {row['bucket']}: {row['avg_close_return_pct']:+.2f}% medio, "
+                f"{row['positive_rate']:.1f}% positivi, n={row['count']}"
+            )
+        lines.append("")
+
+    if recent:
+        lines.extend(["## Ultime valutazioni", ""])
+        for row in recent:
+            lines.append(
+                f"- {row.get('end_date')} {row.get('symbol')} {row.get('strategy')} "
+                f"{row.get('opportunity_decision')}/{row.get('opportunity_grade')}: "
+                f"{row.get('close_return_pct')}% ({row.get('outcome')})"
+            )
+        lines.append("")
+
+    if not evaluation_rows:
+        lines.append("Non ci sono ancora valutazioni: servono alcuni run e abbastanza sedute dopo i segnali.")
+
+    lines.append("Nota: statistiche su segnali paper/didattici, non garanzia di performance futura.")
+    return "\n".join(lines).strip()

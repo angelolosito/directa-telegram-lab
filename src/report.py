@@ -33,6 +33,22 @@ def _opportunity_line(signal: Signal) -> str:
     )
 
 
+def _learning_feedback(signal: Signal) -> dict:
+    feedback = (signal.meta or {}).get("learning_feedback", {})
+    return feedback if isinstance(feedback, dict) else {}
+
+
+def _learning_line(signal: Signal) -> str:
+    feedback = _learning_feedback(signal)
+    if not feedback:
+        return ""
+    return (
+        f"Feedback diario: {feedback.get('verdict')} "
+        f"{_format_optional_float(feedback.get('adjustment'), 1)} punti "
+        f"(n={feedback.get('count')}, positivi {feedback.get('positive_rate')}%)\n"
+    )
+
+
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
         return (
@@ -41,6 +57,7 @@ def format_signal(signal: Signal) -> str:
             f"Strategia: {signal.strategy}\n"
             f"Score: {_format_optional_float(signal.score, 1)}/100\n"
             f"{_opportunity_line(signal)}"
+            f"{_learning_line(signal)}"
             f"Prezzo: {signal.price:.4f} €\n"
             f"Entry simulata: {signal.entry:.4f} €\n"
             f"Stop: {signal.stop:.4f} €\n"
@@ -69,11 +86,17 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         if opportunity
         else ""
     )
+    feedback = _learning_feedback(signal)
+    learning = (
+        f" | diario {feedback.get('adjustment'):+.1f}"
+        if feedback.get("adjustment") is not None
+        else ""
+    )
     return (
         f"{rank}. <b>{signal.symbol}</b> {signal.name} | "
         f"score {_format_optional_float(signal.score, 1)}/100 | "
         f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
-        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}"
+        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}"
     )
 
 
