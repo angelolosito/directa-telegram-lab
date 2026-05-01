@@ -16,6 +16,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
 - Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
+- Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -47,6 +48,7 @@ directa-telegram-lab/
 │   ├── opportunity.py
 │   ├── paper_portfolio.py
 │   ├── report.py
+│   ├── signal_journal.py
 │   ├── strategy.py
 │   └── telegram_notifier.py
 ├── state/
@@ -141,6 +143,12 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+learning:
+  enabled: true
+  horizons_sessions: [5, 10, 20, 40]
+  primary_horizon_sessions: 20
+  min_bucket_count: 2
+
 market_regime:
   enabled: true
   neutral_score_boost: 5
@@ -179,6 +187,7 @@ strategy:
 `market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile può bloccare nuovi ingressi paper.
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
+`learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 

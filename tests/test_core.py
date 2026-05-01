@@ -12,6 +12,7 @@ from src.backtest import run_backtest
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
+from src.signal_journal import append_signal_journal, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 
 
@@ -60,6 +61,12 @@ def sample_config() -> dict:
             "max_risk_pct": 8.0,
             "high_quality_cost_pct": 1.0,
             "max_cost_pct": 5.0,
+        },
+        "learning": {
+            "enabled": True,
+            "horizons_sessions": [2, 3],
+            "primary_horizon_sessions": 2,
+            "min_bucket_count": 1,
         },
         "backtest": {"max_new_positions_per_day": 1},
     }
@@ -305,6 +312,76 @@ class SetupRadarTests(unittest.TestCase):
         self.assertEqual(signals[0].action, "WATCH")
         self.assertEqual(signals[0].strategy, "near_breakout_setup")
         self.assertGreaterEqual(signals[0].score or 0, 50.0)
+
+
+class SignalJournalTests(unittest.TestCase):
+    def test_signal_journal_deduplicates_and_evaluates_forward_returns(self) -> None:
+        cfg = sample_config()
+        signal = Signal(
+            symbol="TEST.MI",
+            name="Test",
+            instrument_type="stock",
+            action="BUY",
+            strategy="trend_pullback",
+            date="2026-01-01",
+            price=10.0,
+            entry=10.0,
+            stop=9.5,
+            target=11.0,
+            reward_risk=2.0,
+            score=75.0,
+            meta={"opportunity": {"decision": "GO", "grade": "B"}},
+        )
+        dates = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"])
+        df = pd.DataFrame(
+            {
+                "Close": [10.0, 10.5, 11.2, 11.4],
+                "High": [10.1, 10.7, 11.3, 11.5],
+                "Low": [9.9, 10.2, 10.8, 11.1],
+            },
+            index=dates,
+        )
+
+        with TemporaryDirectory() as tmp:
+            journal_path = Path(tmp) / "signal_journal.csv"
+            evaluations_path = Path(tmp) / "signal_evaluations.csv"
+
+            added = append_signal_journal(
+                journal_path,
+                [signal],
+                {"state": "risk_on"},
+                date(2026, 1, 1),
+            )
+            added_again = append_signal_journal(
+                journal_path,
+                [signal],
+                {"state": "risk_on"},
+                date(2026, 1, 1),
+            )
+            summary = update_signal_evaluations(
+                journal_path,
+                evaluations_path,
+                {"TEST.MI": df},
+                cfg,
+                date(2026, 1, 4),
+            )
+            second_summary = update_signal_evaluations(
+                journal_path,
+                evaluations_path,
+                {"TEST.MI": df},
+                cfg,
+                date(2026, 1, 5),
+            )
+            rows = pd.read_csv(evaluations_path)
+
+        self.assertEqual(added, 1)
+        self.assertEqual(added_again, 0)
+        self.assertEqual(summary["completed"], 1)
+        self.assertEqual(second_summary["new_or_updated"], 0)
+        self.assertEqual(summary["positive_rate"], 100.0)
+        self.assertIn("trend_pullback|GO|B", summary["best_bucket"])
+        self.assertEqual(len(rows), 2)
+        self.assertIn("target_hit", set(rows["outcome"]))
 
 
 class BacktestTests(unittest.TestCase):

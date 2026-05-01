@@ -20,6 +20,12 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+learning:
+  enabled: true
+  horizons_sessions: [5, 10, 20, 40]
+  primary_horizon_sessions: 20
+  min_bucket_count: 2
+
 market_regime:
   enabled: true
   lookback_days: 360
@@ -86,3 +92,5 @@ paths:
   database: state/trading_lab.sqlite
   reports_dir: reports
   signals_csv: data/signals_log.csv
+  signal_journal: data/signal_journal.csv
+  signal_evaluations: data/signal_evaluations.csv

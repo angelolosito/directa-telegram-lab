@@ -101,6 +101,7 @@ def build_daily_message(
     errors: list[str],
     dry_run: bool = False,
     market_regime: dict | None = None,
+    signal_learning: dict | None = None,
 ) -> str:
     lines: list[str] = [
         f"📊 <b>Directa Telegram Trading Lab</b>",
@@ -155,6 +156,26 @@ def build_daily_message(
                 "",
             ]
         )
+
+    if signal_learning and signal_learning.get("completed", 0):
+        lines.extend(
+            [
+                "<b>Diario intelligente segnali</b>",
+                f"Segnali in memoria: {signal_learning.get('journal_size', 0)}",
+                f"Nuove valutazioni aggiornate: {signal_learning.get('new_or_updated', 0)}",
+                f"Orizzonte principale: {signal_learning.get('primary_horizon')} sedute",
+                f"Valutazioni complete: {signal_learning.get('completed', 0)}",
+                f"Tasso positivi: {_format_optional_float(signal_learning.get('positive_rate'), 1)}%",
+                f"Rendimento medio: {_format_optional_float(signal_learning.get('avg_close_return_pct'), 2)}%",
+                "",
+            ]
+        )
+        if signal_learning.get("best_bucket"):
+            lines.append(f"Setup migliori finora: {signal_learning.get('best_bucket')}")
+        if signal_learning.get("weak_bucket"):
+            lines.append(f"Setup più deboli finora: {signal_learning.get('weak_bucket')}")
+        if signal_learning.get("best_bucket") or signal_learning.get("weak_bucket"):
+            lines.append("")
 
     if close_events:
         lines.append("<b>Uscite / vendite simulate</b>")

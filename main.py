@@ -15,6 +15,7 @@ from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
 from src.report import build_daily_message, save_markdown_report
+from src.signal_journal import append_signal_journal, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 from src.telegram_notifier import TelegramNotifier
 
@@ -327,8 +328,22 @@ def main() -> int:
             else:
                 opened_signals.append(best_signal)
 
+        learning_enabled = bool(cfg.get("learning", {}).get("enabled", True))
         if not dry_run:
             append_signals_csv(app.signals_csv, all_logged_signals)
+            if learning_enabled:
+                append_signal_journal(app.signal_journal_csv, all_logged_signals, market_regime.to_dict(), today)
+                learning_summary = update_signal_evaluations(
+                    app.signal_journal_csv,
+                    app.signal_evaluations_csv,
+                    market_data,
+                    cfg,
+                    today,
+                )
+            else:
+                learning_summary = None
+        else:
+            learning_summary = None
         summary = portfolio.summary(market_data)
         message = build_daily_message(
             run_date=today,
@@ -340,6 +355,7 @@ def main() -> int:
             errors=errors,
             dry_run=dry_run,
             market_regime=market_regime.to_dict(),
+            signal_learning=learning_summary,
         )
 
         if cfg["run"].get("save_reports", True) and not dry_run:
