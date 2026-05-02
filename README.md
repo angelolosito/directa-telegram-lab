@@ -16,6 +16,8 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
 - Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
 - Integra un controllo fondamentale per le azioni: crescita, margini, debito, liquidità, free cash flow, valutazione, dividendi, revisioni EPS e calendario trimestrali quando disponibili.
+- Blocca o sospende segnali su azioni con quality gate fondamentale insufficiente o trimestrali troppo vicine.
+- Aggiunge una sezione di decisione operativa: GO controllato, WAIT selettivo o WAIT.
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
@@ -206,6 +208,14 @@ fundamentals:
   strong_score: 72
   healthy_score: 60
   weak_score: 45
+  quality_gate:
+    enabled: true
+    block_on_critical_subscores: true
+  earnings_blackout:
+    enabled: true
+    days_before: 5
+    days_after: 1
+    action: watch
 
 market_regime:
   enabled: true
@@ -249,6 +259,7 @@ strategy:
 `relative_strength` confronta titolo/ETF con un benchmark: se uno strumento resta debole rispetto al mercato, il suo score viene ridotto anche se il setup tecnico sembra valido.
 `fundamentals` aggiunge qualità aziendale ai segnali BUY sulle azioni. Usa `yfinance` di default; se imposti `ALPHA_VANTAGE_API_KEY`, il provider `auto` può usare Alpha Vantage per i ticker senza suffisso di borsa. I dati vengono salvati in cache in `data/fundamentals_cache.json` per ridurre chiamate e lentezza.
 Le società con fondamentali forti ricevono un bonus; quelle deboli vengono penalizzate e possono diventare WATCH. I dati mancanti non bloccano di default, perché alcuni ticker europei hanno copertura incompleta.
+Il quality gate fondamentale sospende titoli con sotto-punteggi critici troppo deboli, anche se lo score totale sembra discreto. La finestra trimestrali evita nuovi ingressi nei 5 giorni prima e nel giorno dopo una trimestrale nota.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 

@@ -21,6 +21,7 @@ from src.relative_strength import (
     benchmark_for_instrument,
     configured_relative_strength_benchmarks,
 )
+from src.report import build_daily_message
 from src.scenario import apply_scenario, build_scenario_report, default_scenarios
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
@@ -129,6 +130,19 @@ def sample_config() -> dict:
             "healthy_score": 60.0,
             "strong_score": 72.0,
             "score_adjustments": {"strong": 6.0, "healthy": 3.0, "mixed": 0.0, "weak": -8.0},
+            "quality_gate": {
+                "enabled": True,
+                "block_on_critical_subscores": True,
+                "max_critical_failures": 0,
+                "min_subscores": {"profitability": 35.0, "balance_sheet": 35.0, "cashflow": 35.0},
+            },
+            "earnings_blackout": {
+                "enabled": True,
+                "days_before": 5,
+                "days_after": 1,
+                "action": "watch",
+                "penalty_points": 5.0,
+            },
             "weights": {
                 "profitability": 0.25,
                 "growth": 0.20,
@@ -406,6 +420,37 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual((etf.meta or {})["allocation"]["decision"], "SELECTED")
 
 
+class DecisionReportTests(unittest.TestCase):
+    def test_daily_report_states_wait_when_only_candidates_exist(self) -> None:
+        candidate = sample_buy_signal("TEST", 68.0)
+        candidate.action = "WATCH"
+
+        message = build_daily_message(
+            run_date=date(2026, 5, 1),
+            buy_signals=[],
+            candidate_signals=[candidate],
+            close_events=[],
+            trail_events=[],
+            summary={
+                "cash": 1000.0,
+                "open_market_value": 0.0,
+                "equity": 1000.0,
+                "open_positions": 0,
+                "realized_pnl": 0.0,
+                "unrealized_pnl": 0.0,
+                "total_pnl": 0.0,
+                "total_return_pct": 0.0,
+                "open_risk_to_stop": 0.0,
+            },
+            errors=[],
+            market_regime={"enabled": True, "state": "risk_on", "new_positions_allowed": True},
+        )
+
+        self.assertIn("Decisione operativa", message)
+        self.assertIn("Verdetto: WAIT selettivo", message)
+        self.assertIn("Miglior candidato in osservazione: TEST", message)
+
+
 class FundamentalAnalysisTests(unittest.TestCase):
     def test_fundamentals_reward_strong_company(self) -> None:
         cfg = sample_config()
@@ -495,6 +540,73 @@ class FundamentalAnalysisTests(unittest.TestCase):
         self.assertEqual(reviewed.action, "BUY")
         self.assertIsNone((reviewed.meta or {})["fundamentals"]["score"])
         self.assertEqual((reviewed.meta or {})["fundamentals"]["state"], "unknown")
+
+    def test_quality_gate_blocks_critical_subscore(self) -> None:
+        cfg = sample_config()
+        snapshot = FundamentalSnapshot(
+            symbol="TEST",
+            provider="unit",
+            source_symbol="TEST",
+            fetched_at="2026-05-01T00:00:00+00:00",
+            metrics={
+                "profit_margin": 0.25,
+                "operating_margin": 0.22,
+                "roe": 0.28,
+                "revenue_growth": 0.18,
+                "earnings_growth": 0.20,
+                "debt_to_equity": 20.0,
+                "current_ratio": 1.8,
+                "operating_cashflow": -100_000.0,
+                "free_cashflow": -120_000.0,
+                "forward_pe": 22.0,
+                "price_to_sales": 5.0,
+                "ev_to_ebitda": 16.0,
+                "payout_ratio": 0.25,
+                "recommendation_mean": 1.8,
+            },
+            events={},
+        )
+        signal = sample_buy_signal("TEST", 70.0)
+
+        reviewed = apply_fundamental_review(signal, {"symbol": "TEST", "type": "stock"}, snapshot, cfg)
+
+        self.assertEqual(reviewed.action, "WATCH")
+        self.assertTrue((reviewed.meta or {})["fundamentals"]["quality_gate"]["blocked"])
+        self.assertIn("Quality gate fondamentale", reviewed.reason)
+
+    def test_earnings_blackout_blocks_near_quarterly_report(self) -> None:
+        cfg = sample_config()
+        snapshot = FundamentalSnapshot(
+            symbol="TEST",
+            provider="unit",
+            source_symbol="TEST",
+            fetched_at="2026-05-01T00:00:00+00:00",
+            metrics={
+                "profit_margin": 0.25,
+                "operating_margin": 0.22,
+                "roe": 0.28,
+                "revenue_growth": 0.18,
+                "earnings_growth": 0.20,
+                "debt_to_equity": 20.0,
+                "current_ratio": 1.8,
+                "operating_cashflow": 1_000_000.0,
+                "free_cashflow": 700_000.0,
+                "forward_pe": 22.0,
+                "price_to_sales": 5.0,
+                "ev_to_ebitda": 16.0,
+                "payout_ratio": 0.25,
+                "recommendation_mean": 1.8,
+            },
+            events={"next_earnings_date": "2026-05-04"},
+        )
+        signal = sample_buy_signal("TEST", 70.0)
+        signal.date = "2026-05-01"
+
+        reviewed = apply_fundamental_review(signal, {"symbol": "TEST", "type": "stock"}, snapshot, cfg)
+
+        self.assertEqual(reviewed.action, "WATCH")
+        self.assertTrue((reviewed.meta or {})["fundamentals"]["earnings_blackout"]["active"])
+        self.assertIn("Trimestrale troppo vicina", reviewed.reason)
 
 
 class CalibrationTests(unittest.TestCase):

@@ -91,7 +91,11 @@ def _fundamentals_line(signal: Signal) -> str:
         earnings = f" | trimestrale: {events.get('next_earnings_date')}"
     elif isinstance(events, dict) and events.get("latest_quarter"):
         earnings = f" | ultimo trimestre: {events.get('latest_quarter')}"
-    return f"Fondamentali: {state} {score_text}/100 | fonte {source}{earnings}\n"
+    quality_gate = fundamentals.get("quality_gate") or {}
+    gate = " | quality gate KO" if isinstance(quality_gate, dict) and quality_gate.get("blocked") else ""
+    blackout = fundamentals.get("earnings_blackout") or {}
+    blackout_text = " | finestra trimestrale" if isinstance(blackout, dict) and blackout.get("active") else ""
+    return f"Fondamentali: {state} {score_text}/100 | fonte {source}{earnings}{gate}{blackout_text}\n"
 
 
 def _allocation(signal: Signal) -> dict:
@@ -169,6 +173,12 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         score = fundamentals.get("score")
         score_text = _format_optional_float(score, 1) if score is not None else "n/d"
         fundamentals_text = f" | FND {fundamentals.get('state', 'n/d')} {score_text}"
+        quality_gate = fundamentals.get("quality_gate") or {}
+        if isinstance(quality_gate, dict) and quality_gate.get("blocked"):
+            fundamentals_text += " QG-KO"
+        blackout = fundamentals.get("earnings_blackout") or {}
+        if isinstance(blackout, dict) and blackout.get("active"):
+            fundamentals_text += " trim"
     allocation = _allocation(signal)
     allocation_text = ""
     if allocation:
@@ -181,6 +191,56 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}{relative_text}"
         f"{fundamentals_text}{allocation_text}"
     )
+
+
+def _decision_summary_lines(
+    buy_signals: list[Signal],
+    candidate_signals: list[Signal],
+    market_regime: dict | None,
+) -> list[str]:
+    lines = ["<b>Decisione operativa</b>"]
+    if buy_signals:
+        symbols = ", ".join(signal.symbol for signal in buy_signals)
+        lines.extend(
+            [
+                "Verdetto: GO controllato",
+                f"Candidato selezionato: {symbols}",
+                "Azione: valutare ingresso manuale solo rispettando size, stop e rischio indicati dal bot.",
+                "",
+            ]
+        )
+        return lines
+
+    if market_regime and market_regime.get("enabled") and not market_regime.get("new_positions_allowed", True):
+        lines.extend(
+            [
+                "Verdetto: WAIT",
+                f"Motivo: regime mercato {market_regime.get('state', 'n/d')}, nuovi ingressi non permessi.",
+                "",
+            ]
+        )
+        return lines
+
+    if candidate_signals:
+        best = candidate_signals[0]
+        lines.extend(
+            [
+                "Verdetto: WAIT selettivo",
+                f"Miglior candidato in osservazione: {best.symbol} con score {_format_optional_float(best.score, 1)}/100.",
+                "Motivo: esiste interesse, ma i filtri finali non autorizzano un nuovo ingresso.",
+                "",
+            ]
+        )
+        return lines
+
+    lines.extend(
+        [
+            "Verdetto: WAIT",
+            "Motivo: nessun setup maturo con prezzo, rischio, mercato e qualità allineati.",
+            "",
+        ]
+    )
+    return lines
 
 
 def format_close_event(event: dict) -> str:
@@ -300,6 +360,8 @@ def build_daily_message(
             lines.append(f"- {reason}: {count}")
         if allocation.get("top_rejections"):
             lines.append("")
+
+    lines.extend(_decision_summary_lines(buy_signals, candidate_signals, market_regime))
 
     if close_events:
         lines.append("<b>Uscite / vendite simulate</b>")

@@ -135,6 +135,16 @@ def _parse_event(value: Any) -> str | None:
     return text
 
 
+def _parse_iso_date(value: Any):
+    text = _parse_event(value)
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text[:10]).date()
+    except Exception:
+        return None
+
+
 def _normalize_percent(value: float | None) -> float | None:
     if value is None:
         return None
@@ -450,6 +460,55 @@ def evaluate_fundamentals(snapshot: FundamentalSnapshot, config: dict) -> Fundam
     )
 
 
+def _quality_gate(review: FundamentalReview, cfg: dict) -> dict[str, Any]:
+    gate_cfg = cfg.get("quality_gate", {})
+    if not gate_cfg.get("enabled", True) or review.score is None:
+        return {"enabled": bool(gate_cfg.get("enabled", True)), "blocked": False, "weak_subscores": []}
+
+    thresholds = gate_cfg.get("min_subscores") or {
+        "profitability": 35.0,
+        "balance_sheet": 35.0,
+        "cashflow": 35.0,
+    }
+    weak_subscores = []
+    for key, threshold in thresholds.items():
+        value = review.subscores.get(key)
+        if value is not None and value < float(threshold):
+            weak_subscores.append({"name": key, "score": value, "threshold": float(threshold)})
+
+    max_failures = int(gate_cfg.get("max_critical_failures", 0))
+    blocked = bool(gate_cfg.get("block_on_critical_subscores", True)) and len(weak_subscores) > max_failures
+    return {
+        "enabled": True,
+        "blocked": blocked,
+        "weak_subscores": weak_subscores,
+    }
+
+
+def _earnings_blackout(events: dict[str, str | None], signal_date: str, cfg: dict) -> dict[str, Any]:
+    blackout_cfg = cfg.get("earnings_blackout", {})
+    if not blackout_cfg.get("enabled", True):
+        return {"enabled": False, "active": False}
+
+    earnings_date = _parse_iso_date(events.get("next_earnings_date"))
+    run_date = _parse_iso_date(signal_date)
+    if earnings_date is None or run_date is None:
+        return {"enabled": True, "active": False}
+
+    days_to_earnings = (earnings_date - run_date).days
+    days_before = int(blackout_cfg.get("days_before", 5))
+    days_after = int(blackout_cfg.get("days_after", 1))
+    active = -days_after <= days_to_earnings <= days_before
+    return {
+        "enabled": True,
+        "active": active,
+        "earnings_date": earnings_date.isoformat(),
+        "days_to_earnings": days_to_earnings,
+        "action": str(blackout_cfg.get("action", "watch")),
+        "penalty_points": float(blackout_cfg.get("penalty_points", 5.0)),
+    }
+
+
 def apply_fundamental_review(
     signal: Signal,
     instrument: dict[str, Any],
@@ -476,13 +535,24 @@ def apply_fundamental_review(
     else:
         review = evaluate_fundamentals(snapshot, config)
 
-    meta = dict(signal.meta or {})
-    meta["fundamentals"] = review.to_dict()
-    signal.meta = meta
+    quality_gate = _quality_gate(review, cfg)
+    earnings_blackout = _earnings_blackout(review.events, signal.date, cfg)
 
     if review.adjustment:
         signal.score = round(max(0.0, min(100.0, float(signal.score or 0.0) + review.adjustment)), 1)
         signal.score_details = f"{signal.score_details}; fondamentali {review.adjustment:+.1f}"
+
+    if earnings_blackout.get("active") and earnings_blackout.get("action") == "penalty":
+        penalty = float(earnings_blackout.get("penalty_points", 5.0))
+        signal.score = round(max(0.0, float(signal.score or 0.0) - penalty), 1)
+        signal.score_details = f"{signal.score_details}; trimestrale vicina -{penalty:.1f}"
+
+    review_payload = review.to_dict()
+    review_payload["quality_gate"] = quality_gate
+    review_payload["earnings_blackout"] = earnings_blackout
+    meta = dict(signal.meta or {})
+    meta["fundamentals"] = review_payload
+    signal.meta = meta
 
     block_score = float(cfg.get("block_below_score", cfg.get("weak_score", 45.0)))
     block_weak = bool(cfg.get("block_when_weak", True))
@@ -491,6 +561,18 @@ def apply_fundamental_review(
         signal.action = "WATCH"
         signal.reason += (
             f" Fondamentali deboli: score {review.score:.1f}/100, sotto blocco {block_score:.1f}."
+        )
+    elif quality_gate.get("blocked"):
+        weak_names = ", ".join(item["name"] for item in quality_gate.get("weak_subscores", []))
+        signal.action = "WATCH"
+        signal.reason += f" Quality gate fondamentale non superato: {weak_names} sotto soglia."
+    elif earnings_blackout.get("active") and earnings_blackout.get("action") == "watch":
+        days = int(earnings_blackout.get("days_to_earnings", 0))
+        label = "tra" if days >= 0 else "da"
+        signal.action = "WATCH"
+        signal.reason += (
+            f" Trimestrale troppo vicina: {earnings_blackout.get('earnings_date')} "
+            f"({label} {abs(days)} giorni)."
         )
     elif review.score is None and block_missing:
         signal.action = "WATCH"

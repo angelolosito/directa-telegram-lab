@@ -81,6 +81,20 @@ fundamentals:
     healthy: 3
     mixed: 0
     weak: -8
+  quality_gate:
+    enabled: true
+    block_on_critical_subscores: true
+    max_critical_failures: 0
+    min_subscores:
+      profitability: 35
+      balance_sheet: 35
+      cashflow: 35
+  earnings_blackout:
+    enabled: true
+    days_before: 5
+    days_after: 1
+    action: watch
+    penalty_points: 5
   weights:
     profitability: 0.25
     growth: 0.20
