@@ -21,6 +21,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Confronta ogni candidato con un benchmark di riferimento e premia solo gli strumenti con buona forza relativa.
 - Usa un selettore finale di portafoglio per evitare segnali troppo simili per settore, area o ruolo.
 - Produce un report di calibrazione per capire se le soglie sono troppo rigide, troppo permissive o concentrate.
+- Confronta scenari alternativi di configurazione per scegliere regole piu robuste.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -56,6 +57,7 @@ directa-telegram-lab/
 │   ├── paper_portfolio.py
 │   ├── relative_strength.py
 │   ├── report.py
+│   ├── scenario.py
 │   ├── signal_journal.py
 │   ├── strategy.py
 │   └── telegram_notifier.py
@@ -90,6 +92,14 @@ python main.py --calibration-report
 ```
 
 Il report viene stampato in console e salvato in `reports/calibration_YYYY-MM-DD.md`. Serve a capire frequenza operativa, bucket migliori/deboli, settori, aree geografiche e strumenti della watchlist rimasti silenziosi.
+
+Per confrontare piu configurazioni sullo stesso storico:
+
+```bash
+python main.py --scenario-report
+```
+
+Il report viene salvato in `reports/scenario_YYYY-MM-DD.md` e confronta scenari come soglie score piu alte, rischio minore, una sola posizione, maggiore preferenza ETF in mercato neutrale e diversificazione piu rigida. Non modifica automaticamente `config.yaml`.
 
 Per eseguire i test automatici:
 

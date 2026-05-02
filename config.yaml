@@ -36,6 +36,16 @@ calibration:
   min_profit_factor: 1.15
   max_drawdown_warn_pct: 8.0
 
+scenario_report:
+  max_scenarios: 9
+  min_trades_for_ranking: 5
+  max_monthly_trades: 4.0
+  max_drawdown_warn_pct: 8.0
+  drawdown_weight: 1.25
+  profit_factor_weight: 6.0
+  small_sample_penalty: 2.0
+  overtrade_penalty: 2.0
+
 allocation:
   enabled: true
   max_new_positions_per_run: 1

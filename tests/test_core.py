@@ -20,6 +20,7 @@ from src.relative_strength import (
     benchmark_for_instrument,
     configured_relative_strength_benchmarks,
 )
+from src.scenario import apply_scenario, build_scenario_report, default_scenarios
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 
@@ -483,6 +484,85 @@ class CalibrationTests(unittest.TestCase):
         self.assertIn("semiconductors", report)
         self.assertIn("Tipi strumento", report)
         self.assertIn("stock", report)
+
+
+class ScenarioReportTests(unittest.TestCase):
+    def test_apply_scenario_does_not_mutate_base_config(self) -> None:
+        cfg = sample_config()
+        spec = default_scenarios()[1]
+
+        scenario_cfg = apply_scenario(cfg, spec)
+
+        self.assertEqual(cfg["strategy"]["min_signal_score"], 60.0)
+        self.assertEqual(scenario_cfg["strategy"]["min_signal_score"], 65)
+
+    def test_scenario_report_ranks_best_scenario_from_backtest_results(self) -> None:
+        cfg = sample_config()
+        cfg["scenario_report"] = {
+            "max_scenarios": 3,
+            "min_trades_for_ranking": 1,
+            "max_monthly_trades": 4.0,
+            "max_drawdown_warn_pct": 8.0,
+            "drawdown_weight": 1.0,
+            "profit_factor_weight": 6.0,
+            "small_sample_penalty": 2.0,
+            "overtrade_penalty": 2.0,
+        }
+
+        def fake_backtest(watchlist, market_data, config, regime_data=None, relative_strength_data=None):  # noqa: ARG001
+            min_score = config["strategy"]["min_signal_score"]
+            if min_score == 70:
+                total_return = 4.0
+                pnl = 40.0
+                exit_price = 120.0
+            elif min_score == 65:
+                total_return = 8.0
+                pnl = 80.0
+                exit_price = 140.0
+            else:
+                total_return = -2.0
+                pnl = -20.0
+                exit_price = 90.0
+            trade = BacktestTrade(
+                symbol="TEST.MI",
+                name="Test",
+                instrument_type="stock",
+                strategy="trend_pullback",
+                entry_date=date(2026, 1, 1),
+                exit_date=date(2026, 2, 1),
+                entry_price=100.0,
+                exit_price=exit_price,
+                qty=1,
+                exit_reason="target_reached" if pnl > 0 else "stop_loss",
+                gross_pnl=pnl,
+                net_pnl=pnl,
+                meta={"region": "europe", "sector": "test"},
+            )
+            return BacktestResult(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 4, 1),
+                initial_capital=1000.0,
+                ending_equity=1000.0 + pnl,
+                realized_pnl=pnl,
+                total_return_pct=total_return,
+                max_drawdown_pct=-1.0,
+                trades=[trade],
+                open_positions=[],
+                errors=[],
+                equity_curve=[],
+                regime_counts={},
+            )
+
+        with patch("src.scenario.run_backtest", side_effect=fake_backtest):
+            report = build_scenario_report(
+                [{"symbol": "TEST.MI"}],
+                {"TEST.MI": pd.DataFrame({"Close": [1.0]})},
+                cfg,
+            )
+
+        self.assertIn("Scenario Report", report)
+        self.assertIn("Scenario: `quality_65`", report)
+        self.assertIn("`strategy.min_signal_score` -> `65`", report)
 
 
 class RelativeStrengthTests(unittest.TestCase):

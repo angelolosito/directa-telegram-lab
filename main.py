@@ -24,6 +24,7 @@ from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio
 from src.relative_strength import apply_relative_strength, configured_relative_strength_benchmarks
 from src.report import build_daily_message, save_markdown_report
+from src.scenario import build_scenario_report
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 from src.telegram_notifier import TelegramNotifier
@@ -235,6 +236,7 @@ def main() -> int:
     parser.add_argument("--backtest", action="store_true", help="Run a historical paper backtest and exit")
     parser.add_argument("--backtest-days", type=int, default=None, help="Override backtest lookback days")
     parser.add_argument("--calibration-report", action="store_true", help="Run backtest diagnostics and tuning report")
+    parser.add_argument("--scenario-report", action="store_true", help="Compare multiple strategy/risk configurations")
     parser.add_argument("--learning-report", action="store_true", help="Print the signal learning journal report and exit")
     args = parser.parse_args()
 
@@ -264,7 +266,7 @@ def main() -> int:
     download_retries = int(data_cfg.get("download_retries", 1))
     process_timeout = int(data_cfg.get("process_timeout_seconds", max(request_timeout, 20)))
 
-    if args.backtest or args.calibration_report:
+    if args.backtest or args.calibration_report or args.scenario_report:
         backtest_cfg = cfg.get("backtest", {})
         lookback_days = int(
             args.backtest_days
@@ -331,22 +333,33 @@ def main() -> int:
         )
         errors.extend(relative_errors)
 
-        result = run_backtest(
-            active_watchlist,
-            market_data,
-            cfg,
-            regime_data=regime_data,
-            relative_strength_data=relative_strength_data,
-        )
-        result.errors.extend(errors)
-        report = (
-            build_calibration_report(result, active_watchlist, cfg)
-            if args.calibration_report
-            else format_backtest_report(result)
-        )
+        if args.scenario_report:
+            report = build_scenario_report(
+                active_watchlist,
+                market_data,
+                cfg,
+                regime_data=regime_data,
+                relative_strength_data=relative_strength_data,
+                data_errors=errors,
+            )
+            prefix = "scenario"
+        else:
+            result = run_backtest(
+                active_watchlist,
+                market_data,
+                cfg,
+                regime_data=regime_data,
+                relative_strength_data=relative_strength_data,
+            )
+            result.errors.extend(errors)
+            report = (
+                build_calibration_report(result, active_watchlist, cfg)
+                if args.calibration_report
+                else format_backtest_report(result)
+            )
+            prefix = "calibration" if args.calibration_report else "backtest"
         if cfg["run"].get("save_reports", True):
             app.reports_dir.mkdir(parents=True, exist_ok=True)
-            prefix = "calibration" if args.calibration_report else "backtest"
             path = app.reports_dir / f"{prefix}_{today.isoformat()}.md"
             path.write_text(report, encoding="utf-8")
         print(report)
