@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from multiprocessing import get_all_start_methods, get_context
+from pathlib import Path
 from queue import Empty
 from zoneinfo import ZoneInfo
 
@@ -12,6 +14,35 @@ from .indicators import add_indicators
 
 class DataProviderError(RuntimeError):
     pass
+
+
+def _safe_cache_name(symbol: str) -> str:
+    return symbol.replace("/", "_").replace("=", "_").replace(":", "_")
+
+
+def _cache_path(cache_dir: str | Path | None, symbol: str) -> Path | None:
+    if cache_dir is None:
+        return None
+    return Path(cache_dir) / f"{_safe_cache_name(symbol)}.csv"
+
+
+def _read_cached_daily(cache_dir: str | Path | None, symbol: str) -> pd.DataFrame | None:
+    path = _cache_path(cache_dir, symbol)
+    if path is None or not path.exists():
+        return None
+    try:
+        df = pd.read_csv(path, index_col=0, parse_dates=True)
+    except Exception:
+        return None
+    return df if not df.empty else None
+
+
+def _write_cached_daily(cache_dir: str | Path | None, symbol: str, df: pd.DataFrame) -> None:
+    path = _cache_path(cache_dir, symbol)
+    if path is None or df.empty:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path)
 
 
 def _download_worker(
@@ -79,8 +110,11 @@ def fetch_daily_data(
     lookback_days: int,
     timezone: str,
     request_timeout: int = 8,
-    retries: int = 1,
+    retries: int = 2,
     process_timeout: int = 20,
+    retry_backoff_seconds: float = 3.0,
+    cache_dir: str | Path | None = None,
+    use_cache_on_failure: bool = True,
 ) -> pd.DataFrame:
     tz = ZoneInfo(timezone)
     end = datetime.now(tz=tz).date() + timedelta(days=1)
@@ -107,9 +141,14 @@ def fetch_daily_data(
             last_error = e
 
         if attempt == attempts:
+            cached = _read_cached_daily(cache_dir, symbol) if use_cache_on_failure else None
+            if cached is not None:
+                df = cached
+                break
             raise DataProviderError(
                 f"{symbol}: download dati non riuscito dopo {attempts} tentativi: {last_error}"
             ) from last_error
+        time.sleep(retry_backoff_seconds * attempt)
 
     if df.empty:
         raise DataProviderError(f"Nessun dato ricevuto per {symbol}")
@@ -124,4 +163,5 @@ def fetch_daily_data(
 
     df = df.dropna(subset=["Open", "High", "Low", "Close"])
     df.index = pd.to_datetime(df.index)
+    _write_cached_daily(cache_dir, symbol, df)
     return add_indicators(df)

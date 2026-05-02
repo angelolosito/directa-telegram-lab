@@ -24,7 +24,7 @@ class Signal:
     target: float | None = None
     reward_risk: float | None = None
     reason: str = ""
-    qty: int = 0
+    qty: float = 0.0
     notional: float = 0.0
     estimated_round_trip_cost: float = 0.0
     score: float | None = None

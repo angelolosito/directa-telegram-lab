@@ -113,6 +113,65 @@ def _allocation_line(signal: Signal) -> str:
     return f"Allocazione: {decision} | score finale {score}/100 | {reason}\n"
 
 
+def _dedupe(items: list[str]) -> list[str]:
+    seen = set()
+    deduped = []
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _no_buy_reasons(signal: Signal, market_regime: dict | None = None) -> list[str]:
+    if signal.action == "BUY":
+        return []
+    reasons: list[str] = []
+
+    if market_regime and market_regime.get("state") == "unknown" and not market_regime.get("new_positions_allowed", True):
+        reasons.append("regime mercato non validato")
+
+    opportunity = _opportunity(signal)
+    hard_blocks = opportunity.get("hard_blocks") if isinstance(opportunity, dict) else None
+    if isinstance(hard_blocks, list):
+        reasons.extend(str(item) for item in hard_blocks if item)
+    elif opportunity and opportunity.get("decision") != "GO":
+        threshold = opportunity.get("threshold")
+        if threshold is not None:
+            reasons.append(f"score opportunita sotto soglia {threshold}")
+
+    cost_pct = None
+    if signal.meta and isinstance(signal.meta.get("cost_pct"), (int, float)):
+        cost_pct = float(signal.meta["cost_pct"])
+    else:
+        cost_pct = _cost_pct(signal)
+    if cost_pct is not None and cost_pct > 1.0:
+        reasons.append(f"costi {cost_pct:.2f}% sopra area ideale 1.00%")
+
+    fundamentals = _fundamentals(signal)
+    if fundamentals:
+        quality_gate = fundamentals.get("quality_gate") or {}
+        if isinstance(quality_gate, dict) and quality_gate.get("blocked"):
+            weak = ", ".join(item.get("name", "") for item in quality_gate.get("weak_subscores", []) if item.get("name"))
+            reasons.append(f"quality gate fondamentale KO{': ' + weak if weak else ''}")
+        blackout = fundamentals.get("earnings_blackout") or {}
+        if isinstance(blackout, dict) and blackout.get("active"):
+            reasons.append(f"trimestrale vicina {blackout.get('earnings_date', '')}".strip())
+        if fundamentals.get("state") == "weak":
+            reasons.append("fondamentali deboli")
+
+    allocation = _allocation(signal)
+    if allocation and allocation.get("decision") == "SKIPPED":
+        reasons.append(str(allocation.get("reason", "non selezionato dal motore allocazione")))
+
+    if "capitale/size non sufficiente" in signal.reason:
+        reasons.append("capitale o size non sufficiente")
+    if not reasons:
+        reasons.append("trigger operativo non confermato")
+    return _dedupe(reasons)
+
+
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
         currency = _currency(signal)
@@ -147,13 +206,14 @@ def format_signal(signal: Signal) -> str:
     return f"⚪ <b>HOLD</b> {signal.name} ({signal.symbol})\nPrezzo: {signal.price}\n{signal.reason}"
 
 
-def format_candidate_signal(signal: Signal, rank: int) -> str:
-    status = "operativo" if signal.action == "BUY" else "watch"
+def format_candidate_signal(signal: Signal, rank: int, market_regime: dict | None = None) -> str:
+    status = "BUY" if signal.action == "BUY" else "WATCH"
+    gate = "PASS" if signal.action == "BUY" else "FAIL"
     opportunity = _opportunity(signal)
     decision = (
-        f" | {opportunity.get('decision')}/{opportunity.get('grade')}"
+        f"{opportunity.get('decision')}/{opportunity.get('grade')}"
         if opportunity
-        else ""
+        else "n/d"
     )
     feedback = _learning_feedback(signal)
     learning = (
@@ -184,12 +244,18 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
     if allocation:
         label = "scelto" if allocation.get("decision") == "SELECTED" else "scartato"
         allocation_text = f" | alloc {label}"
+    no_buy = ""
+    reasons = _no_buy_reasons(signal, market_regime)
+    if reasons:
+        no_buy = f"\n   No-buy: {'; '.join(reasons[:3])}"
     return (
-        f"{rank}. <b>{signal.symbol}</b> {signal.name} | "
-        f"score {_format_optional_float(signal.score, 1)}/100 | "
-        f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
-        f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}{relative_text}"
-        f"{fundamentals_text}{allocation_text}"
+        f"{rank}. <b>{signal.symbol}</b> {signal.name}\n"
+        f"   Setup score: {_format_optional_float(signal.score, 1)}/100 | "
+        f"Stato operativo: {status} | Gate: {gate}\n"
+        f"   Setup: {signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
+        f"Costi {_format_optional_float(_cost_pct(signal), 2)}% | Decisione {decision}"
+        f"{learning}{relative_text}{fundamentals_text}{allocation_text}"
+        f"{no_buy}"
     )
 
 
@@ -269,9 +335,10 @@ def build_daily_message(
     market_regime: dict | None = None,
     signal_learning: dict | None = None,
     allocation: dict | None = None,
+    project_name: str = "Trading Lab",
 ) -> str:
     lines: list[str] = [
-        f"📊 <b>Directa Telegram Trading Lab</b>",
+        f"📊 <b>{project_name}</b>",
         f"Data: {run_date.isoformat()}",
     ]
     if dry_run:
@@ -305,7 +372,8 @@ def build_daily_message(
             f"P/L realizzato netto stimato: {summary.get('realized_pnl', 0):.2f} €",
             f"P/L non realizzato netto stimato: {summary.get('unrealized_pnl', 0):.2f} €",
             f"P/L totale stimato: {summary.get('total_pnl', 0):.2f} € ({summary.get('total_return_pct', 0):.2f}%)",
-            f"Rischio aperto fino agli stop: {summary.get('open_risk_to_stop', 0):.2f} €",
+            f"Rischio aperto fino agli stop: {summary.get('open_risk_to_stop', 0):.2f} € "
+            f"({_format_optional_float(summary.get('open_risk_to_stop_pct'), 2)}% equity)",
             "",
         ]
     )
@@ -320,9 +388,17 @@ def build_daily_message(
                 f"P/L medio per trade: {_format_optional_float(summary.get('avg_trade_pnl'), 2)} €",
                 f"Migliore/peggiore: {_format_optional_float(summary.get('best_trade_pnl'), 2)} € / "
                 f"{_format_optional_float(summary.get('worst_trade_pnl'), 2)} €",
-                "",
+            "",
             ]
         )
+        if summary.get("closed_trades", 0) < 30:
+            lines.extend(
+                [
+                    "Affidabilita statistica: bassa.",
+                    f"Motivo: solo {summary.get('closed_trades', 0)} trade chiusi; servono almeno 30 casi.",
+                    "",
+                ]
+            )
 
     if signal_learning and signal_learning.get("completed", 0):
         lines.extend(
@@ -387,12 +463,12 @@ def build_daily_message(
     if candidate_signals:
         lines.append("<b>Classifica candidati</b>")
         for rank, signal in enumerate(candidate_signals[:5], start=1):
-            lines.append(format_candidate_signal(signal, rank))
+            lines.append(format_candidate_signal(signal, rank, market_regime))
         lines.append("")
 
     if errors:
         lines.append("<b>Errori dati</b>")
-        for err in errors[:10]:
+        for err in _dedupe(errors)[:10]:
             lines.append(f"⚠️ {err}")
 
     lines.append("Nota: segnali didattici/paper trading, non ordini reali.")

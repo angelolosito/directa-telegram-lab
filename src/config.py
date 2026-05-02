@@ -36,6 +36,10 @@ class AppConfig:
     def fundamentals_cache(self) -> Path:
         return self.base_dir / self.raw["paths"].get("fundamentals_cache", "data/fundamentals_cache.json")
 
+    @property
+    def market_data_cache(self) -> Path:
+        return self.base_dir / self.raw["paths"].get("market_data_cache", "data/market_cache")
+
 
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as f:

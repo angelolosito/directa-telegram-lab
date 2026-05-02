@@ -183,8 +183,8 @@ def evaluate_market_regime(
 
     valid_states = [benchmark.state for benchmark in benchmarks if benchmark.state != "unknown"]
     if not valid_states:
-        boost = float(regime_cfg.get("unknown_score_boost", 0))
-        allow = not bool(regime_cfg.get("block_new_positions_when_unknown", False))
+        boost = float(regime_cfg.get("unknown_score_boost", 15))
+        allow = not bool(regime_cfg.get("block_new_positions_when_unknown", True))
         return MarketRegime(
             enabled=True,
             state="unknown",
@@ -192,7 +192,7 @@ def evaluate_market_regime(
             base_min_signal_score=base_score,
             active_min_signal_score=min(100.0, base_score + boost),
             new_positions_allowed=allow,
-            reason="Nessun benchmark valido: il filtro resta prudente ma non forza uno stop operativo.",
+            reason="Nessun benchmark valido: nuovi ingressi bloccati finche il regime non e validato.",
             benchmarks=benchmarks,
         )
 

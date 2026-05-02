@@ -76,7 +76,8 @@ def review_opportunity(signal: Signal, market_regime: Any, config: dict) -> Sign
 
     if not new_positions_allowed:
         adjustment -= 12.0
-        hard_blocks.append("regime mercato difensivo")
+        block_reason = "regime mercato non validato" if market_state == "unknown" else "regime mercato difensivo"
+        hard_blocks.append(block_reason)
         _add_check(checks, "mercato", "fail", -12.0, "regime mercato non consente nuovi ingressi")
     elif market_state == "risk_on":
         adjustment += 4.0

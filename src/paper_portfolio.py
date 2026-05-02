@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -21,7 +22,7 @@ class Position:
     strategy: str
     entry_date: str
     entry_price: float
-    qty: int
+    qty: float
     stop: float
     target: float
     highest_close: float
@@ -63,7 +64,7 @@ class PaperPortfolio:
                 strategy TEXT NOT NULL,
                 entry_date TEXT NOT NULL,
                 entry_price REAL NOT NULL,
-                qty INTEGER NOT NULL,
+                qty REAL NOT NULL,
                 stop REAL NOT NULL,
                 target REAL NOT NULL,
                 highest_close REAL NOT NULL,
@@ -125,7 +126,7 @@ class PaperPortfolio:
                 strategy=r["strategy"],
                 entry_date=r["entry_date"],
                 entry_price=float(r["entry_price"]),
-                qty=int(r["qty"]),
+                qty=float(r["qty"]),
                 stop=float(r["stop"]),
                 target=float(r["target"]),
                 highest_close=float(r["highest_close"]),
@@ -266,9 +267,15 @@ class PaperPortfolio:
             return signal
 
         entry_base = signal.entry * fx_rate
-        qty_by_risk = int(risk_per_trade // unit_risk)
+        fractional = bool(costs_cfg.get("fractional_enabled", False))
+        qty_by_risk = risk_per_trade / unit_risk if fractional else int(risk_per_trade // unit_risk)
         qty_by_allocation = max_affordable_quantity(entry_base, available_cash, max_allocation, costs_cfg)
         qty = max(0, min(qty_by_risk, qty_by_allocation))
+        if fractional:
+            precision = int(costs_cfg.get("quantity_precision", 6))
+            qty = round(qty, precision)
+        else:
+            qty = float(int(qty))
 
         notional = round(qty * entry_base, 2) if qty > 0 else 0.0
         signal.qty = qty
@@ -395,7 +402,7 @@ class PaperPortfolio:
         if row is None:
             raise ValueError(f"Posizione non trovata: {position_id}")
 
-        qty = int(row["qty"])
+        qty = float(row["qty"])
         entry_price = float(row["entry_price"])
         entry_commission = float(row["entry_commission"])
         meta = self._row_meta(row)
@@ -503,7 +510,7 @@ class PaperPortfolio:
         open_risk_to_stop = 0.0
         open_exit_commissions = 0.0
         for row in open_rows:
-            qty = int(row["qty"])
+            qty = float(row["qty"])
             entry_price = float(row["entry_price"])
             stop = float(row["stop"])
             entry_commission = float(row["entry_commission"])
@@ -528,6 +535,7 @@ class PaperPortfolio:
         )
         total_pnl = equity - initial_capital
         total_return_pct = (total_pnl / initial_capital) * 100 if initial_capital else 0.0
+        open_risk_to_stop_pct = (open_risk_to_stop / equity) * 100 if equity > 0 else 0.0
 
         stats = self.trade_stats()
         return {
@@ -540,5 +548,17 @@ class PaperPortfolio:
             "total_pnl": round(total_pnl, 2),
             "total_return_pct": round(total_return_pct, 2),
             "open_risk_to_stop": round(open_risk_to_stop, 2),
+            "open_risk_to_stop_pct": round(open_risk_to_stop_pct, 2),
             **stats,
         }
+
+
+def archive_and_reset_database(db_path: Path) -> Path | None:
+    if not db_path.exists():
+        return None
+    archive_dir = db_path.parent / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    archive_path = archive_dir / f"{db_path.stem}_{timestamp}{db_path.suffix}"
+    shutil.move(str(db_path), archive_path)
+    return archive_path

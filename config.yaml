@@ -1,5 +1,5 @@
 project:
-  name: Directa Telegram Trading Lab
+  name: Trade Republic Trading Lab
   timezone: Europe/Rome
   currency: EUR
 
@@ -13,7 +13,10 @@ run:
 data:
   request_timeout_seconds: 6
   process_timeout_seconds: 20
-  download_retries: 0
+  download_retries: 2
+  retry_backoff_seconds: 3
+  cache_enabled: true
+  use_cache_on_failure: true
 
 currency:
   lookback_days: 14
@@ -145,8 +148,10 @@ market_regime:
   enabled: true
   lookback_days: 360
   min_rows_required: 220
+  unknown_score_boost: 15
   neutral_score_boost: 5
   risk_off_score_boost: 15
+  block_new_positions_when_unknown: true
   block_new_positions_when_risk_off: true
   benchmarks:
     - symbol: SWDA.MI
@@ -175,7 +180,7 @@ opportunity:
   min_risk_pct: 0.8
   max_risk_pct: 8.0
   high_quality_cost_pct: 1.0
-  max_cost_pct: 5.0
+  max_cost_pct: 2.0
 
 strategy:
   min_signal_score: 60
@@ -198,12 +203,16 @@ strategy:
   trailing_atr_multiplier: 2.00
 
 costs:
-  broker: Directa
-  # Modello indicativo del profilo variabile Italia: 1,9 per mille, minimo 1,50 €, massimo 18 €.
-  # Aggiorna questi valori se usi un profilo commissionale diverso.
-  variable_rate: 0.0019
-  min_commission: 1.50
-  max_commission: 18.00
+  broker: Trade Republic
+  # Modello prudente per operazioni manuali: 1 € per acquisto e 1 € per vendita.
+  # I piani di accumulo possono avere condizioni diverse; qui simuliamo ingressi discrezionali.
+  fixed_commission: 1.00
+  variable_rate: 0.0
+  min_commission: 1.00
+  max_commission: 1.00
+  fractional_enabled: true
+  quantity_precision: 6
+  min_order_notional: 1.00
 
 paths:
   database: state/trading_lab.sqlite
@@ -212,3 +221,4 @@ paths:
   signal_journal: data/signal_journal.csv
   signal_evaluations: data/signal_evaluations.csv
   fundamentals_cache: data/fundamentals_cache.json
+  market_data_cache: data/market_cache

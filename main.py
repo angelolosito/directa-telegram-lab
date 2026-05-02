@@ -22,7 +22,7 @@ from src.fundamentals import apply_fundamental_review, fetch_fundamental_snapsho
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.opportunity import review_opportunity
-from src.paper_portfolio import PaperPortfolio
+from src.paper_portfolio import PaperPortfolio, archive_and_reset_database
 from src.relative_strength import apply_relative_strength, configured_relative_strength_benchmarks
 from src.report import build_daily_message, save_markdown_report
 from src.scenario import build_scenario_report
@@ -103,6 +103,9 @@ def fetch_market_regime_data(
     request_timeout: int,
     download_retries: int,
     process_timeout: int,
+    retry_backoff_seconds: float = 3.0,
+    cache_dir: Path | None = None,
+    use_cache_on_failure: bool = True,
 ) -> tuple[dict, list[str]]:
     regime_data = {}
     errors: list[str] = []
@@ -131,6 +134,9 @@ def fetch_market_regime_data(
                 request_timeout=request_timeout,
                 retries=download_retries,
                 process_timeout=process_timeout,
+                retry_backoff_seconds=retry_backoff_seconds,
+                cache_dir=cache_dir,
+                use_cache_on_failure=use_cache_on_failure,
             )
             if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                 errors.append(f"{symbol}: storico insufficiente per filtro regime mercato.")
@@ -152,6 +158,9 @@ def fetch_relative_strength_data(
     request_timeout: int,
     download_retries: int,
     process_timeout: int,
+    retry_backoff_seconds: float = 3.0,
+    cache_dir: Path | None = None,
+    use_cache_on_failure: bool = True,
 ) -> tuple[dict, list[str]]:
     relative_data = {}
     errors: list[str] = []
@@ -180,6 +189,9 @@ def fetch_relative_strength_data(
                 request_timeout=request_timeout,
                 retries=download_retries,
                 process_timeout=process_timeout,
+                retry_backoff_seconds=retry_backoff_seconds,
+                cache_dir=cache_dir,
+                use_cache_on_failure=use_cache_on_failure,
             )
             if len(df.dropna(subset=["Close"])) < min_rows:
                 errors.append(f"{symbol}: storico insufficiente per forza relativa.")
@@ -199,6 +211,9 @@ def fetch_currency_data(
     request_timeout: int,
     download_retries: int,
     process_timeout: int,
+    retry_backoff_seconds: float = 3.0,
+    cache_dir: Path | None = None,
+    use_cache_on_failure: bool = True,
 ) -> tuple[dict, list[str]]:
     fx_data = {}
     errors: list[str] = []
@@ -219,6 +234,9 @@ def fetch_currency_data(
                 request_timeout=request_timeout,
                 retries=download_retries,
                 process_timeout=process_timeout,
+                retry_backoff_seconds=retry_backoff_seconds,
+                cache_dir=cache_dir,
+                use_cache_on_failure=use_cache_on_failure,
             )
             fx_data[symbol] = df
         except DataProviderError as e:
@@ -230,7 +248,7 @@ def fetch_currency_data(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Directa Telegram Trading Lab")
+    parser = argparse.ArgumentParser(description="Trading Lab")
     parser.add_argument("--base-dir", default=".", help="Project base directory")
     parser.add_argument("--dry-run", action="store_true", help="Do not open new paper positions and do not send Telegram")
     parser.add_argument("--send-test", action="store_true", help="Send only a Telegram test message")
@@ -239,6 +257,7 @@ def main() -> int:
     parser.add_argument("--calibration-report", action="store_true", help="Run backtest diagnostics and tuning report")
     parser.add_argument("--scenario-report", action="store_true", help="Compare multiple strategy/risk configurations")
     parser.add_argument("--learning-report", action="store_true", help="Print the signal learning journal report and exit")
+    parser.add_argument("--reset-paper-portfolio", action="store_true", help="Archive the current paper DB and start from zero")
     args = parser.parse_args()
 
     app = load_config(args.base_dir)
@@ -249,7 +268,22 @@ def main() -> int:
     notifier = TelegramNotifier()
 
     if args.send_test:
-        notifier.send("✅ Test Directa Telegram Trading Lab riuscito.")
+        notifier.send("✅ Test Trading Lab riuscito.")
+        return 0
+
+    if args.reset_paper_portfolio:
+        archived = archive_and_reset_database(app.database_path)
+        portfolio = PaperPortfolio(app.database_path, cfg)
+        portfolio.log_event(
+            "RESET",
+            "Paper portfolio reset: nuovo laboratorio avviato da zero.",
+            payload={"archived_database": str(archived) if archived else None},
+        )
+        portfolio.close()
+        if archived:
+            print(f"Paper portfolio azzerato. Archivio creato: {archived}")
+        else:
+            print("Paper portfolio inizializzato da zero. Nessun database precedente da archiviare.")
         return 0
 
     if args.learning_report:
@@ -266,6 +300,9 @@ def main() -> int:
     request_timeout = int(data_cfg.get("request_timeout_seconds", 8))
     download_retries = int(data_cfg.get("download_retries", 1))
     process_timeout = int(data_cfg.get("process_timeout_seconds", max(request_timeout, 20)))
+    retry_backoff_seconds = float(data_cfg.get("retry_backoff_seconds", 3.0))
+    use_cache_on_failure = bool(data_cfg.get("use_cache_on_failure", True))
+    market_data_cache = app.market_data_cache if bool(data_cfg.get("cache_enabled", True)) else None
 
     if args.backtest or args.calibration_report or args.scenario_report:
         backtest_cfg = cfg.get("backtest", {})
@@ -287,6 +324,9 @@ def main() -> int:
                     request_timeout=request_timeout,
                     retries=download_retries,
                     process_timeout=process_timeout,
+                    retry_backoff_seconds=retry_backoff_seconds,
+                    cache_dir=market_data_cache,
+                    use_cache_on_failure=use_cache_on_failure,
                 )
                 if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                     errors.append(f"{symbol}: storico insufficiente per backtest.")
@@ -304,6 +344,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(fx_errors)
         fx_pairs = configured_currency_pairs(watchlist, cfg)
@@ -320,6 +363,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(regime_errors)
         relative_strength_data, relative_errors = fetch_relative_strength_data(
@@ -331,6 +377,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(relative_errors)
 
@@ -397,6 +446,9 @@ def main() -> int:
                     request_timeout=request_timeout,
                     retries=download_retries,
                     process_timeout=process_timeout,
+                    retry_backoff_seconds=retry_backoff_seconds,
+                    cache_dir=market_data_cache,
+                    use_cache_on_failure=use_cache_on_failure,
                 )
                 if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                     errors.append(f"{symbol}: storico insufficiente dopo calcolo SMA200.")
@@ -414,6 +466,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(fx_errors)
         fx_pairs = configured_currency_pairs(watchlist, cfg)
@@ -430,6 +485,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(regime_errors)
         relative_strength_data, relative_errors = fetch_relative_strength_data(
@@ -441,6 +499,9 @@ def main() -> int:
             request_timeout,
             download_retries,
             process_timeout,
+            retry_backoff_seconds,
+            market_data_cache,
+            use_cache_on_failure,
         )
         errors.extend(relative_errors)
         market_regime = evaluate_market_regime(regime_data, cfg, min_signal_score, today)
@@ -570,6 +631,7 @@ def main() -> int:
             market_regime=market_regime.to_dict(),
             signal_learning=learning_summary,
             allocation=allocation_result.summary,
+            project_name=cfg.get("project", {}).get("name", "Trading Lab"),
         )
 
         if cfg["run"].get("save_reports", True) and not dry_run:

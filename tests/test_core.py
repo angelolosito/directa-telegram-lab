@@ -11,11 +11,12 @@ import pandas as pd
 from src.allocation import select_portfolio_candidates
 from src.backtest import BacktestResult, BacktestTrade, run_backtest
 from src.calibration import build_calibration_report
+from src.costs import estimate_round_trip_cost
 from src.fundamentals import FundamentalSnapshot, apply_fundamental_review, evaluate_fundamentals
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
-from src.paper_portfolio import PaperPortfolio
+from src.paper_portfolio import PaperPortfolio, archive_and_reset_database
 from src.relative_strength import (
     apply_relative_strength,
     benchmark_for_instrument,
@@ -195,6 +196,20 @@ def sample_buy_signal(
 
 
 class RiskControlTests(unittest.TestCase):
+    def test_archive_and_reset_database_moves_existing_state(self) -> None:
+        cfg = sample_config()
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "state" / "lab.sqlite"
+            portfolio = PaperPortfolio(db_path, cfg)
+            self.assertTrue(db_path.exists())
+            portfolio.close()
+
+            archive_path = archive_and_reset_database(db_path)
+
+            self.assertIsNotNone(archive_path)
+            self.assertFalse(db_path.exists())
+            self.assertTrue(archive_path and archive_path.exists())
+
     def test_cooldown_blocks_reentry_after_stop(self) -> None:
         cfg = sample_config()
         with TemporaryDirectory() as tmp:
@@ -282,6 +297,37 @@ class RiskControlTests(unittest.TestCase):
         self.assertEqual(sized.qty, 5)
         self.assertEqual(sized.notional, 450.0)
 
+    def test_trade_republic_fractional_sizing_uses_fixed_costs(self) -> None:
+        cfg = sample_config()
+        cfg["costs"] = {
+            "broker": "Trade Republic",
+            "fixed_commission": 1.0,
+            "fractional_enabled": True,
+            "quantity_precision": 6,
+            "min_order_notional": 1.0,
+        }
+        with TemporaryDirectory() as tmp:
+            portfolio = PaperPortfolio(Path(tmp) / "lab.sqlite", cfg)
+            signal = Signal(
+                symbol="TEST",
+                name="Test",
+                instrument_type="stock",
+                action="BUY",
+                strategy="trend_pullback",
+                date="2026-05-01",
+                price=180.0,
+                entry=180.0,
+                stop=170.0,
+                target=200.0,
+                reward_risk=2.0,
+            )
+            sized = portfolio.size_signal(signal)
+            portfolio.close()
+
+        self.assertEqual(sized.qty, 2.5)
+        self.assertEqual(sized.notional, 450.0)
+        self.assertEqual(estimate_round_trip_cost(sized.notional, cfg["costs"]), 2.0)
+
     def test_signal_score_includes_cost_penalty(self) -> None:
         cfg = sample_config()
         signal = Signal(
@@ -348,6 +394,21 @@ class RiskControlTests(unittest.TestCase):
 
 
 class MarketRegimeTests(unittest.TestCase):
+    def test_unknown_market_regime_blocks_new_positions(self) -> None:
+        cfg = sample_config()
+        cfg["market_regime"] = {
+            "enabled": True,
+            "unknown_score_boost": 15.0,
+            "block_new_positions_when_unknown": True,
+            "benchmarks": [{"symbol": "BENCH.MI", "name": "Benchmark"}],
+        }
+
+        regime = evaluate_market_regime({}, cfg, 60.0, date(2026, 5, 1))
+
+        self.assertEqual(regime.state, "unknown")
+        self.assertFalse(regime.new_positions_allowed)
+        self.assertEqual(regime.active_min_signal_score, 75.0)
+
     def test_risk_off_regime_blocks_new_positions(self) -> None:
         cfg = sample_config()
         cfg["market_regime"] = {
@@ -449,6 +510,34 @@ class DecisionReportTests(unittest.TestCase):
         self.assertIn("Decisione operativa", message)
         self.assertIn("Verdetto: WAIT selettivo", message)
         self.assertIn("Miglior candidato in osservazione: TEST", message)
+        self.assertIn("Stato operativo: WATCH", message)
+        self.assertIn("No-buy:", message)
+
+    def test_daily_report_shows_open_risk_pct_and_dedupes_errors(self) -> None:
+        message = build_daily_message(
+            run_date=date(2026, 5, 1),
+            buy_signals=[],
+            candidate_signals=[],
+            close_events=[],
+            trail_events=[],
+            summary={
+                "cash": 900.0,
+                "open_market_value": 100.0,
+                "equity": 1000.0,
+                "open_positions": 1,
+                "realized_pnl": 0.0,
+                "unrealized_pnl": 0.0,
+                "total_pnl": 0.0,
+                "total_return_pct": 0.0,
+                "open_risk_to_stop": 50.0,
+                "open_risk_to_stop_pct": 5.0,
+            },
+            errors=["EXW1.MI: errore", "EXW1.MI: errore"],
+            market_regime={"enabled": True, "state": "unknown", "new_positions_allowed": False},
+        )
+
+        self.assertIn("50.00 € (5.00% equity)", message)
+        self.assertEqual(message.count("EXW1.MI: errore"), 1)
 
 
 class FundamentalAnalysisTests(unittest.TestCase):

@@ -1,23 +1,24 @@
-# Directa Telegram Trading Lab
+# Trade Republic Trading Lab
 
-Bot sperimentale per generare segnali **paper trading** su strumenti quotati su Borsa Italiana / ETFplus / Euronext Milan, con notifiche Telegram.
+Bot sperimentale per generare segnali **paper trading** su azioni ed ETF, con notifiche Telegram e modello costi configurato per Trade Republic.
 
-> **Nota importante**: questo progetto non invia ordini reali e non si collega al conto Directa. Serve per testare regole operative in modo disciplinato. Le decisioni reali restano manuali.
+> **Nota importante**: questo progetto non invia ordini reali e non si collega al conto Trade Republic o a TradingView. Serve per testare regole operative in modo disciplinato. Le decisioni reali restano manuali.
 
 ## Cosa fa
 
 - Scarica dati giornalieri tramite `yfinance`.
-- Applica timeout e retry brevi al download dati, così un ticker lento non blocca l'intero run.
+- Applica timeout, 3 tentativi e cache locale al download dati, così un ticker lento non blocca l'intero run.
 - Calcola indicatori tecnici: SMA 20/50/200, RSI 14, ATR 14, volume medio.
 - Genera segnali con due strategie:
   - Trend + Pullback
   - Breakout controllato
 - Assegna uno score 0-100 ai segnali e mostra la classifica dei migliori candidati.
-- Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
+- Valuta il regime di mercato con benchmark globali: se il mercato è fragile o non validato blocca nuovi ingressi o alza la soglia score.
 - Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
 - Integra un controllo fondamentale per le azioni: crescita, margini, debito, liquidità, free cash flow, valutazione, dividendi, revisioni EPS e calendario trimestrali quando disponibili.
 - Blocca o sospende segnali su azioni con quality gate fondamentale insufficiente o trimestrali troppo vicine.
 - Aggiunge una sezione di decisione operativa: GO controllato, WAIT selettivo o WAIT.
+- Spiega il motivo no-buy dei candidati in WATCH.
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
@@ -33,7 +34,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
   - Massimo 2 posizioni aperte
   - Massimo 6 ingressi al mese
   - Cooldown di 5 giorni dopo uno stop loss sullo stesso strumento
-- Stima commissioni Directa con modello configurabile.
+- Stima costi Trade Republic con commissione fissa per ordine e supporto paper agli acquisti frazionati.
 - Invia alert Telegram.
 - Salva report giornaliero in `reports/`.
 
@@ -117,6 +118,14 @@ Per leggere il report del diario intelligente:
 python main.py --learning-report
 ```
 
+Per ripartire da zero con il paper portfolio, archiviando il database precedente:
+
+```bash
+python main.py --reset-paper-portfolio
+```
+
+Questo comando sposta il vecchio SQLite in `state/archive/` e crea un nuovo conto paper da `risk.initial_capital`.
+
 Per inviare Telegram in locale:
 
 ```bash
@@ -172,7 +181,9 @@ Apri `config.yaml`:
 data:
   request_timeout_seconds: 6
   process_timeout_seconds: 20
-  download_retries: 0
+  download_retries: 2
+  cache_enabled: true
+  use_cache_on_failure: true
 
 backtest:
   lookback_days: 900
@@ -219,8 +230,10 @@ fundamentals:
 
 market_regime:
   enabled: true
+  unknown_score_boost: 15
   neutral_score_boost: 5
   risk_off_score_boost: 15
+  block_new_positions_when_unknown: true
   block_new_positions_when_risk_off: true
   benchmarks:
     - symbol: SWDA.MI
@@ -235,7 +248,7 @@ opportunity:
   max_pullback_distance_pct: 4.5
   ideal_breakout_extension_atr: 0.8
   max_breakout_extension_atr: 1.4
-  max_cost_pct: 5.0
+  max_cost_pct: 2.0
 
 risk:
   initial_capital: 1000
@@ -249,10 +262,17 @@ strategy:
   min_signal_score: 60
   near_breakout_pct: 1.5
   setup_watch_min_score: 50
+
+costs:
+  broker: Trade Republic
+  fixed_commission: 1.00
+  fractional_enabled: true
+  quantity_precision: 6
+  min_order_notional: 1.00
 ```
 
 `min_signal_score` blocca i segnali tecnicamente validi ma qualitativamente deboli. Lo score considera forza del trend, RSI, rischio percentuale, volumi, rapporto rischio/rendimento e incidenza dei costi.
-`market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile può bloccare nuovi ingressi paper.
+`market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile o unknown blocca nuovi ingressi paper.
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 `learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.
@@ -260,8 +280,10 @@ strategy:
 `fundamentals` aggiunge qualità aziendale ai segnali BUY sulle azioni. Usa `yfinance` di default; se imposti `ALPHA_VANTAGE_API_KEY`, il provider `auto` può usare Alpha Vantage per i ticker senza suffisso di borsa. I dati vengono salvati in cache in `data/fundamentals_cache.json` per ridurre chiamate e lentezza.
 Le società con fondamentali forti ricevono un bonus; quelle deboli vengono penalizzate e possono diventare WATCH. I dati mancanti non bloccano di default, perché alcuni ticker europei hanno copertura incompleta.
 Il quality gate fondamentale sospende titoli con sotto-punteggi critici troppo deboli, anche se lo score totale sembra discreto. La finestra trimestrali evita nuovi ingressi nei 5 giorni prima e nel giorno dopo una trimestrale nota.
+Il report separa `Setup score` e `Gate operativo`: un titolo può avere score alto ma restare WATCH se costi, dati, regime o trigger non sono abbastanza puliti.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
+`costs` ora simula Trade Republic per operazioni manuali: 1 € in acquisto e 1 € in vendita. Gli acquisti frazionati nel paper trading permettono di usare meglio un capitale piccolo, ma restano simulazioni: gli ordini reali vanno poi replicati manualmente nel broker e tracciati su TradingView.
 
 ## Disclaimer
 
