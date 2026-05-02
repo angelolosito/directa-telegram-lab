@@ -19,6 +19,8 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
 - Confronta ogni candidato con un benchmark di riferimento e premia solo gli strumenti con buona forza relativa.
+- Usa un selettore finale di portafoglio per evitare segnali troppo simili per settore, area o ruolo.
+- Produce un report di calibrazione per capire se le soglie sono troppo rigide, troppo permissive o concentrate.
 - Simula acquisti/vendite con paper trading su SQLite.
 - Applica vincoli di rischio:
   - Capitale laboratorio: 1.000 €
@@ -42,8 +44,11 @@ directa-telegram-lab/
 ├── requirements.txt
 ├── src/
 │   ├── backtest.py
+│   ├── allocation.py
+│   ├── calibration.py
 │   ├── config.py
 │   ├── costs.py
+│   ├── currency.py
 │   ├── data_provider.py
 │   ├── indicators.py
 │   ├── market_regime.py
@@ -77,6 +82,14 @@ python main.py --backtest
 ```
 
 Il report viene stampato in console e, se `save_reports` è attivo, salvato in `reports/backtest_YYYY-MM-DD.md`.
+
+Per eseguire una calibrazione sulle regole attive:
+
+```bash
+python main.py --calibration-report
+```
+
+Il report viene stampato in console e salvato in `reports/calibration_YYYY-MM-DD.md`. Serve a capire frequenza operativa, bucket migliori/deboli, settori, aree geografiche e strumenti della watchlist rimasti silenziosi.
 
 Per eseguire i test automatici:
 

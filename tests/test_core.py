@@ -9,7 +9,8 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.allocation import select_portfolio_candidates
-from src.backtest import run_backtest
+from src.backtest import BacktestResult, BacktestTrade, run_backtest
+from src.calibration import build_calibration_report
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
@@ -376,6 +377,112 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual([signal.symbol for signal in result.selected], ["CSSPX.MI"])
         self.assertEqual(stock.action, "WATCH")
         self.assertEqual((etf.meta or {})["allocation"]["decision"], "SELECTED")
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_calibration_report_flags_small_sample_and_silent_watchlist(self) -> None:
+        cfg = sample_config()
+        result = BacktestResult(
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 4, 1),
+            initial_capital=1000.0,
+            ending_equity=995.0,
+            realized_pnl=-5.0,
+            total_return_pct=-0.5,
+            max_drawdown_pct=-2.0,
+            trades=[
+                BacktestTrade(
+                    symbol="AAPL",
+                    name="Apple",
+                    instrument_type="stock",
+                    strategy="trend_pullback",
+                    entry_date=date(2026, 1, 10),
+                    exit_date=date(2026, 1, 20),
+                    entry_price=100.0,
+                    exit_price=98.0,
+                    qty=2,
+                    exit_reason="stop_loss",
+                    gross_pnl=-4.0,
+                    net_pnl=-5.0,
+                    meta={"region": "us_growth", "sector": "consumer_technology"},
+                )
+            ],
+            open_positions=[],
+            errors=[],
+            equity_curve=[],
+            regime_counts={"risk_on": 40, "neutral": 20},
+        )
+
+        report = build_calibration_report(
+            result,
+            [{"symbol": "AAPL"}, {"symbol": "MSFT"}],
+            cfg,
+        )
+
+        self.assertIn("Calibration Report", report)
+        self.assertIn("Campione ancora piccolo", report)
+        self.assertIn("Watchlist silenziosa", report)
+        self.assertIn("MSFT", report)
+
+    def test_calibration_report_groups_trades_by_sector_and_region(self) -> None:
+        cfg = sample_config()
+        trades = [
+            BacktestTrade(
+                symbol="NVDA",
+                name="NVIDIA",
+                instrument_type="stock",
+                strategy="controlled_breakout",
+                entry_date=date(2026, 1, 10),
+                exit_date=date(2026, 1, 20),
+                entry_price=100.0,
+                exit_price=110.0,
+                qty=2,
+                exit_reason="target_reached",
+                gross_pnl=20.0,
+                net_pnl=17.0,
+                meta={"region": "us_growth", "sector": "semiconductors"},
+            ),
+            BacktestTrade(
+                symbol="ASML.AS",
+                name="ASML",
+                instrument_type="stock",
+                strategy="controlled_breakout",
+                entry_date=date(2026, 2, 10),
+                exit_date=date(2026, 2, 20),
+                entry_price=100.0,
+                exit_price=108.0,
+                qty=2,
+                exit_reason="target_reached",
+                gross_pnl=16.0,
+                net_pnl=13.0,
+                meta={"region": "europe", "sector": "semiconductors"},
+            ),
+        ]
+        result = BacktestResult(
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 4, 1),
+            initial_capital=1000.0,
+            ending_equity=1030.0,
+            realized_pnl=30.0,
+            total_return_pct=3.0,
+            max_drawdown_pct=-1.0,
+            trades=trades,
+            open_positions=[],
+            errors=[],
+            equity_curve=[],
+            regime_counts={},
+        )
+
+        report = build_calibration_report(
+            result,
+            [{"symbol": "NVDA"}, {"symbol": "ASML.AS"}],
+            cfg,
+        )
+
+        self.assertIn("Settori", report)
+        self.assertIn("semiconductors", report)
+        self.assertIn("Tipi strumento", report)
+        self.assertIn("stock", report)
 
 
 class RelativeStrengthTests(unittest.TestCase):

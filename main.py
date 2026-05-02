@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from src.allocation import select_portfolio_candidates
 from src.backtest import format_backtest_report, run_backtest
+from src.calibration import build_calibration_report
 from src.config import load_config, load_watchlist
 from src.currency import (
     configured_currency_pairs,
@@ -233,6 +234,7 @@ def main() -> int:
     parser.add_argument("--send-test", action="store_true", help="Send only a Telegram test message")
     parser.add_argument("--backtest", action="store_true", help="Run a historical paper backtest and exit")
     parser.add_argument("--backtest-days", type=int, default=None, help="Override backtest lookback days")
+    parser.add_argument("--calibration-report", action="store_true", help="Run backtest diagnostics and tuning report")
     parser.add_argument("--learning-report", action="store_true", help="Print the signal learning journal report and exit")
     args = parser.parse_args()
 
@@ -262,7 +264,7 @@ def main() -> int:
     download_retries = int(data_cfg.get("download_retries", 1))
     process_timeout = int(data_cfg.get("process_timeout_seconds", max(request_timeout, 20)))
 
-    if args.backtest:
+    if args.backtest or args.calibration_report:
         backtest_cfg = cfg.get("backtest", {})
         lookback_days = int(
             args.backtest_days
@@ -337,10 +339,15 @@ def main() -> int:
             relative_strength_data=relative_strength_data,
         )
         result.errors.extend(errors)
-        report = format_backtest_report(result)
+        report = (
+            build_calibration_report(result, active_watchlist, cfg)
+            if args.calibration_report
+            else format_backtest_report(result)
+        )
         if cfg["run"].get("save_reports", True):
             app.reports_dir.mkdir(parents=True, exist_ok=True)
-            path = app.reports_dir / f"backtest_{today.isoformat()}.md"
+            prefix = "calibration" if args.calibration_report else "backtest"
+            path = app.reports_dir / f"{prefix}_{today.isoformat()}.md"
             path.write_text(report, encoding="utf-8")
         print(report)
         return 0

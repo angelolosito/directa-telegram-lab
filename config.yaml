@@ -28,6 +28,14 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+calibration:
+  min_trades_for_confidence: 8
+  min_bucket_count: 2
+  min_monthly_trades: 0.4
+  max_monthly_trades: 4.0
+  min_profit_factor: 1.15
+  max_drawdown_warn_pct: 8.0
+
 allocation:
   enabled: true
   max_new_positions_per_run: 1

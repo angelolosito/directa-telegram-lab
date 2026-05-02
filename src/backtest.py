@@ -34,6 +34,7 @@ class BacktestPosition:
 class BacktestTrade:
     symbol: str
     name: str
+    instrument_type: str
     strategy: str
     entry_date: date
     exit_date: date
@@ -43,6 +44,7 @@ class BacktestTrade:
     exit_reason: str
     gross_pnl: float
     net_pnl: float
+    meta: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -170,6 +172,7 @@ def _close_position(
     trade = BacktestTrade(
         symbol=pos.symbol,
         name=pos.name,
+        instrument_type=pos.instrument_type,
         strategy=pos.strategy,
         entry_date=pos.entry_date,
         exit_date=exit_date,
@@ -179,6 +182,7 @@ def _close_position(
         exit_reason=exit_reason,
         gross_pnl=round(gross_pnl, 2),
         net_pnl=round(net_pnl, 2),
+        meta=pos.meta or {},
     )
     return trade, cash_in
 
