@@ -72,6 +72,28 @@ def _relative_strength_line(signal: Signal) -> str:
     )
 
 
+def _fundamentals(signal: Signal) -> dict:
+    fundamentals = (signal.meta or {}).get("fundamentals", {})
+    return fundamentals if isinstance(fundamentals, dict) else {}
+
+
+def _fundamentals_line(signal: Signal) -> str:
+    fundamentals = _fundamentals(signal)
+    if not fundamentals:
+        return ""
+    score = fundamentals.get("score")
+    score_text = _format_optional_float(score, 1) if score is not None else "n/d"
+    state = fundamentals.get("state", "n/d")
+    source = fundamentals.get("source", "n/d")
+    events = fundamentals.get("events") or {}
+    earnings = ""
+    if isinstance(events, dict) and events.get("next_earnings_date"):
+        earnings = f" | trimestrale: {events.get('next_earnings_date')}"
+    elif isinstance(events, dict) and events.get("latest_quarter"):
+        earnings = f" | ultimo trimestre: {events.get('latest_quarter')}"
+    return f"Fondamentali: {state} {score_text}/100 | fonte {source}{earnings}\n"
+
+
 def _allocation(signal: Signal) -> dict:
     allocation = (signal.meta or {}).get("allocation", {})
     return allocation if isinstance(allocation, dict) else {}
@@ -99,6 +121,7 @@ def format_signal(signal: Signal) -> str:
             f"{_opportunity_line(signal)}"
             f"{_learning_line(signal)}"
             f"{_relative_strength_line(signal)}"
+            f"{_fundamentals_line(signal)}"
             f"{_allocation_line(signal)}"
             f"Prezzo: {signal.price:.4f} {currency}\n"
             f"Entry simulata: {signal.entry:.4f} {currency}\n"
@@ -140,6 +163,12 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         if relative.get("relative_strength_pct") is not None
         else ""
     )
+    fundamentals = _fundamentals(signal)
+    fundamentals_text = ""
+    if fundamentals:
+        score = fundamentals.get("score")
+        score_text = _format_optional_float(score, 1) if score is not None else "n/d"
+        fundamentals_text = f" | FND {fundamentals.get('state', 'n/d')} {score_text}"
     allocation = _allocation(signal)
     allocation_text = ""
     if allocation:
@@ -150,7 +179,7 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         f"score {_format_optional_float(signal.score, 1)}/100 | "
         f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
         f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}{relative_text}"
-        f"{allocation_text}"
+        f"{fundamentals_text}{allocation_text}"
     )
 
 

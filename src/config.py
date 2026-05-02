@@ -32,6 +32,10 @@ class AppConfig:
     def signal_evaluations_csv(self) -> Path:
         return self.base_dir / self.raw["paths"].get("signal_evaluations", "data/signal_evaluations.csv")
 
+    @property
+    def fundamentals_cache(self) -> Path:
+        return self.base_dir / self.raw["paths"].get("fundamentals_cache", "data/fundamentals_cache.json")
+
 
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as f:

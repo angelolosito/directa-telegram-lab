@@ -11,6 +11,7 @@ import pandas as pd
 from src.allocation import select_portfolio_candidates
 from src.backtest import BacktestResult, BacktestTrade, run_backtest
 from src.calibration import build_calibration_report
+from src.fundamentals import FundamentalSnapshot, apply_fundamental_review, evaluate_fundamentals
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
@@ -112,6 +113,31 @@ def sample_config() -> dict:
             "very_strong_relative_bonus": 2.0,
             "weak_relative_penalty": 3.0,
             "max_cost_penalty_pct": 2.0,
+        },
+        "fundamentals": {
+            "enabled": True,
+            "provider": "yfinance",
+            "apply_to_types": ["stock"],
+            "cache_ttl_hours": 24,
+            "request_timeout_seconds": 8,
+            "process_timeout_seconds": 15,
+            "report_errors": True,
+            "block_when_weak": True,
+            "block_when_missing": False,
+            "block_below_score": 45.0,
+            "weak_score": 45.0,
+            "healthy_score": 60.0,
+            "strong_score": 72.0,
+            "score_adjustments": {"strong": 6.0, "healthy": 3.0, "mixed": 0.0, "weak": -8.0},
+            "weights": {
+                "profitability": 0.25,
+                "growth": 0.20,
+                "balance_sheet": 0.18,
+                "cashflow": 0.17,
+                "valuation": 0.15,
+                "shareholder": 0.03,
+                "analyst": 0.02,
+            },
         },
         "backtest": {"max_new_positions_per_day": 1},
     }
@@ -378,6 +404,97 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual([signal.symbol for signal in result.selected], ["CSSPX.MI"])
         self.assertEqual(stock.action, "WATCH")
         self.assertEqual((etf.meta or {})["allocation"]["decision"], "SELECTED")
+
+
+class FundamentalAnalysisTests(unittest.TestCase):
+    def test_fundamentals_reward_strong_company(self) -> None:
+        cfg = sample_config()
+        snapshot = FundamentalSnapshot(
+            symbol="TEST",
+            provider="unit",
+            source_symbol="TEST",
+            fetched_at="2026-05-01T00:00:00+00:00",
+            metrics={
+                "profit_margin": 0.25,
+                "operating_margin": 0.22,
+                "roe": 0.28,
+                "revenue_growth": 0.18,
+                "earnings_growth": 0.20,
+                "debt_to_equity": 20.0,
+                "current_ratio": 1.8,
+                "operating_cashflow": 1_000_000.0,
+                "free_cashflow": 700_000.0,
+                "forward_pe": 22.0,
+                "price_to_sales": 5.0,
+                "ev_to_ebitda": 16.0,
+                "payout_ratio": 0.25,
+                "recommendation_mean": 1.8,
+                "eps_revision_balance": 5.0,
+            },
+            events={"next_earnings_date": "2026-07-25"},
+        )
+        signal = sample_buy_signal("TEST", 70.0)
+
+        review = evaluate_fundamentals(snapshot, cfg)
+        reviewed = apply_fundamental_review(signal, {"symbol": "TEST", "type": "stock"}, snapshot, cfg)
+
+        self.assertIn(review.state, {"strong", "healthy"})
+        self.assertGreater(reviewed.score or 0, 70.0)
+        self.assertEqual((reviewed.meta or {})["fundamentals"]["state"], review.state)
+        self.assertIn("fondamentali", reviewed.score_details)
+
+    def test_fundamentals_block_weak_company(self) -> None:
+        cfg = sample_config()
+        snapshot = FundamentalSnapshot(
+            symbol="TEST",
+            provider="unit",
+            source_symbol="TEST",
+            fetched_at="2026-05-01T00:00:00+00:00",
+            metrics={
+                "profit_margin": -0.05,
+                "operating_margin": -0.08,
+                "roe": -0.12,
+                "revenue_growth": -0.20,
+                "earnings_growth": -0.35,
+                "debt_to_equity": 350.0,
+                "current_ratio": 0.5,
+                "operating_cashflow": -100_000.0,
+                "free_cashflow": -120_000.0,
+                "trailing_pe": 90.0,
+                "price_to_sales": 20.0,
+                "ev_to_ebitda": 40.0,
+                "payout_ratio": 1.2,
+                "recommendation_mean": 4.0,
+                "eps_revision_balance": -5.0,
+            },
+            events={},
+        )
+        signal = sample_buy_signal("TEST", 70.0)
+
+        reviewed = apply_fundamental_review(signal, {"symbol": "TEST", "type": "stock"}, snapshot, cfg)
+
+        self.assertEqual(reviewed.action, "WATCH")
+        self.assertLess((reviewed.meta or {})["fundamentals"]["score"], 45.0)
+        self.assertIn("Fondamentali deboli", reviewed.reason)
+
+    def test_unknown_fundamentals_do_not_block_by_default(self) -> None:
+        cfg = sample_config()
+        snapshot = FundamentalSnapshot(
+            symbol="TEST",
+            provider="unit",
+            source_symbol="TEST",
+            fetched_at="2026-05-01T00:00:00+00:00",
+            metrics={},
+            events={},
+            error="provider temporaneamente non disponibile",
+        )
+        signal = sample_buy_signal("TEST", 70.0)
+
+        reviewed = apply_fundamental_review(signal, {"symbol": "TEST", "type": "stock"}, snapshot, cfg)
+
+        self.assertEqual(reviewed.action, "BUY")
+        self.assertIsNone((reviewed.meta or {})["fundamentals"]["score"])
+        self.assertEqual((reviewed.meta or {})["fundamentals"]["state"], "unknown")
 
 
 class CalibrationTests(unittest.TestCase):

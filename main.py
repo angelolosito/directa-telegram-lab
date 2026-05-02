@@ -18,6 +18,7 @@ from src.currency import (
     latest_fx_rates,
 )
 from src.data_provider import DataProviderError, fetch_daily_data
+from src.fundamentals import apply_fundamental_review, fetch_fundamental_snapshot
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import configured_benchmarks, evaluate_market_regime
 from src.opportunity import review_opportunity
@@ -451,6 +452,7 @@ def main() -> int:
 
         actionable_buy_signals: list[Signal] = []
         all_logged_signals: list[Signal] = []
+        fundamental_error_symbols: set[str] = set()
         learning_enabled = bool(cfg.get("learning", {}).get("enabled", True))
         learning_stats = load_learning_stats(app.signal_evaluations_csv, cfg) if learning_enabled else {}
 
@@ -478,6 +480,23 @@ def main() -> int:
                     all_logged_signals.append(signal)
                     continue
                 signal = review_opportunity(signal, market_regime, cfg)
+                if signal.action != "BUY":
+                    all_logged_signals.append(signal)
+                    continue
+                snapshot = fetch_fundamental_snapshot(
+                    instrument,
+                    cfg,
+                    cache_path=None if dry_run else app.fundamentals_cache,
+                )
+                if (
+                    snapshot
+                    and snapshot.error
+                    and symbol not in fundamental_error_symbols
+                    and cfg.get("fundamentals", {}).get("report_errors", True)
+                ):
+                    errors.append(f"{symbol}: fondamentali non disponibili: {snapshot.error}")
+                    fundamental_error_symbols.add(symbol)
+                signal = apply_fundamental_review(signal, instrument, snapshot, cfg)
                 if signal.action != "BUY":
                     all_logged_signals.append(signal)
                     continue

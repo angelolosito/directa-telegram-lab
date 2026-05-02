@@ -61,6 +61,35 @@ allocation:
   weak_relative_penalty: 3
   max_cost_penalty_pct: 2
 
+fundamentals:
+  enabled: true
+  provider: auto
+  apply_to_types: [stock]
+  cache_ttl_hours: 24
+  request_timeout_seconds: 8
+  process_timeout_seconds: 15
+  alpha_vantage_api_key_env: ALPHA_VANTAGE_API_KEY
+  report_errors: true
+  block_when_weak: true
+  block_when_missing: false
+  block_below_score: 45
+  weak_score: 45
+  healthy_score: 60
+  strong_score: 72
+  score_adjustments:
+    strong: 6
+    healthy: 3
+    mixed: 0
+    weak: -8
+  weights:
+    profitability: 0.25
+    growth: 0.20
+    balance_sheet: 0.18
+    cashflow: 0.17
+    valuation: 0.15
+    shareholder: 0.03
+    analyst: 0.02
+
 learning:
   enabled: true
   horizons_sessions: [5, 10, 20, 40]
@@ -168,3 +197,4 @@ paths:
   signals_csv: data/signals_log.csv
   signal_journal: data/signal_journal.csv
   signal_evaluations: data/signal_evaluations.csv
+  fundamentals_cache: data/fundamentals_cache.json

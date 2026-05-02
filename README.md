@@ -15,6 +15,7 @@ Bot sperimentale per generare segnali **paper trading** su strumenti quotati su 
 - Assegna uno score 0-100 ai segnali e mostra la classifica dei migliori candidati.
 - Valuta il regime di mercato con benchmark globali: se il mercato è fragile blocca nuovi ingressi o alza la soglia score.
 - Rilegge ogni segnale con una checklist opportunità: mercato, trend, timing, momentum, volumi, rischio e costi.
+- Integra un controllo fondamentale per le azioni: crescita, margini, debito, liquidità, free cash flow, valutazione, dividendi, revisioni EPS e calendario trimestrali quando disponibili.
 - Mostra anche setup quasi pronti, così puoi vedere cosa sta maturando prima del trigger operativo.
 - Tiene un diario dei segnali e valuta dopo 5/10/20/40 sedute se il setup era davvero valido.
 - Può usare il diario come feedback prudenziale: setup storicamente deboli vengono penalizzati nello score.
@@ -51,6 +52,7 @@ directa-telegram-lab/
 │   ├── costs.py
 │   ├── currency.py
 │   ├── data_provider.py
+│   ├── fundamentals.py
 │   ├── indicators.py
 │   ├── market_regime.py
 │   ├── opportunity.py
@@ -195,6 +197,16 @@ relative_strength:
   weak_threshold_pct: -2.0
   strong_threshold_pct: 2.0
 
+fundamentals:
+  enabled: true
+  provider: auto
+  apply_to_types: [stock]
+  block_when_weak: true
+  block_when_missing: false
+  strong_score: 72
+  healthy_score: 60
+  weak_score: 45
+
 market_regime:
   enabled: true
   neutral_score_boost: 5
@@ -235,6 +247,8 @@ strategy:
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 `learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.
 `relative_strength` confronta titolo/ETF con un benchmark: se uno strumento resta debole rispetto al mercato, il suo score viene ridotto anche se il setup tecnico sembra valido.
+`fundamentals` aggiunge qualità aziendale ai segnali BUY sulle azioni. Usa `yfinance` di default; se imposti `ALPHA_VANTAGE_API_KEY`, il provider `auto` può usare Alpha Vantage per i ticker senza suffisso di borsa. I dati vengono salvati in cache in `data/fundamentals_cache.json` per ridurre chiamate e lentezza.
+Le società con fondamentali forti ricevono un bonus; quelle deboli vengono penalizzate e possono diventare WATCH. I dati mancanti non bloccano di default, perché alcuni ticker europei hanno copertura incompleta.
 Il cooldown post-stop evita di rientrare subito su un titolo appena chiuso male, mentre `max_trades_per_month` limita l'overtrading del laboratorio.
 `process_timeout_seconds` è il taglio duro per singolo ticker: se Yahoo/YFinance resta appeso, quel simbolo viene saltato e il run continua.
 
