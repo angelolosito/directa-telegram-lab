@@ -5,6 +5,7 @@ from datetime import date
 
 import pandas as pd
 
+from .allocation import select_portfolio_candidates
 from .costs import estimate_commission, estimate_round_trip_cost, max_affordable_quantity
 from .currency import fx_rate_from_meta, price_to_base
 from .market_regime import evaluate_market_regime
@@ -342,8 +343,28 @@ def run_backtest(
             key=lambda signal: (signal.score or 0.0, signal.reward_risk or 0.0, -signal.estimated_round_trip_cost),
             reverse=True,
         )
+        open_contexts = [
+            {
+                "symbol": pos.symbol,
+                "name": pos.name,
+                "instrument_type": pos.instrument_type,
+                "region": pos.meta.get("region"),
+                "sector": pos.meta.get("sector"),
+                "role": pos.meta.get("role"),
+                "priority": pos.meta.get("priority"),
+                "currency": pos.meta.get("currency"),
+            }
+            for pos in positions
+        ]
+        allocation_result = select_portfolio_candidates(
+            candidates,
+            open_contexts,
+            market_regime.to_dict(),
+            config,
+            max_new_positions=max_new_positions_per_day,
+        )
         opened_today = 0
-        for signal in candidates:
+        for signal in allocation_result.selected:
             if opened_today >= max_new_positions_per_day or len(positions) >= max_open_positions:
                 break
             if signal.symbol in {pos.symbol for pos in positions}:

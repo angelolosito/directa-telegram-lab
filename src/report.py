@@ -72,6 +72,21 @@ def _relative_strength_line(signal: Signal) -> str:
     )
 
 
+def _allocation(signal: Signal) -> dict:
+    allocation = (signal.meta or {}).get("allocation", {})
+    return allocation if isinstance(allocation, dict) else {}
+
+
+def _allocation_line(signal: Signal) -> str:
+    allocation = _allocation(signal)
+    if not allocation:
+        return ""
+    decision = allocation.get("decision", "n/d")
+    score = _format_optional_float(allocation.get("score"), 1)
+    reason = allocation.get("reason", "")
+    return f"Allocazione: {decision} | score finale {score}/100 | {reason}\n"
+
+
 def format_signal(signal: Signal) -> str:
     if signal.action == "BUY":
         currency = _currency(signal)
@@ -84,6 +99,7 @@ def format_signal(signal: Signal) -> str:
             f"{_opportunity_line(signal)}"
             f"{_learning_line(signal)}"
             f"{_relative_strength_line(signal)}"
+            f"{_allocation_line(signal)}"
             f"Prezzo: {signal.price:.4f} {currency}\n"
             f"Entry simulata: {signal.entry:.4f} {currency}\n"
             f"Stop: {signal.stop:.4f} {currency}\n"
@@ -124,11 +140,17 @@ def format_candidate_signal(signal: Signal, rank: int) -> str:
         if relative.get("relative_strength_pct") is not None
         else ""
     )
+    allocation = _allocation(signal)
+    allocation_text = ""
+    if allocation:
+        label = "scelto" if allocation.get("decision") == "SELECTED" else "scartato"
+        allocation_text = f" | alloc {label}"
     return (
         f"{rank}. <b>{signal.symbol}</b> {signal.name} | "
         f"score {_format_optional_float(signal.score, 1)}/100 | "
         f"{signal.strategy} | R/R {_format_optional_float(signal.reward_risk, 2)} | "
         f"costi {_format_optional_float(_cost_pct(signal), 2)}% | {status}{decision}{learning}{relative_text}"
+        f"{allocation_text}"
     )
 
 
@@ -157,6 +179,7 @@ def build_daily_message(
     dry_run: bool = False,
     market_regime: dict | None = None,
     signal_learning: dict | None = None,
+    allocation: dict | None = None,
 ) -> str:
     lines: list[str] = [
         f"📊 <b>Directa Telegram Trading Lab</b>",
@@ -230,6 +253,23 @@ def build_daily_message(
         if signal_learning.get("weak_bucket"):
             lines.append(f"Setup più deboli finora: {signal_learning.get('weak_bucket')}")
         if signal_learning.get("best_bucket") or signal_learning.get("weak_bucket"):
+            lines.append("")
+
+    if allocation and allocation.get("enabled"):
+        selected = ", ".join(allocation.get("selected_symbols") or []) or "nessuno"
+        lines.extend(
+            [
+                "<b>Selettore portafoglio</b>",
+                f"Candidati operativi: {allocation.get('candidates', 0)}",
+                f"Selezionati: {selected}",
+                f"Scartati per diversificazione/allocazione: {allocation.get('rejected', 0)}",
+                f"Motivo: {allocation.get('reason', 'n/d')}",
+                "",
+            ]
+        )
+        for reason, count in allocation.get("top_rejections", [])[:3]:
+            lines.append(f"- {reason}: {count}")
+        if allocation.get("top_rejections"):
             lines.append("")
 
     if close_events:

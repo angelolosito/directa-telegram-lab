@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from src.allocation import select_portfolio_candidates
 from src.backtest import run_backtest
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
@@ -95,8 +96,60 @@ def sample_config() -> dict:
             "strong_bonus_points": 7.0,
             "block_when_weak": False,
         },
+        "allocation": {
+            "enabled": True,
+            "max_new_positions_per_run": 1,
+            "max_same_sector_open": 1,
+            "max_same_role_open": 1,
+            "max_same_region_open": 2,
+            "cautious_regime_states": ["neutral"],
+            "cautious_etf_bonus": 4.0,
+            "cautious_stock_penalty": 3.0,
+            "leader_priority_bonus": 2.0,
+            "strong_relative_bonus": 1.0,
+            "very_strong_relative_bonus": 2.0,
+            "weak_relative_penalty": 3.0,
+            "max_cost_penalty_pct": 2.0,
+        },
         "backtest": {"max_new_positions_per_day": 1},
     }
+
+
+def sample_buy_signal(
+    symbol: str,
+    score: float,
+    instrument_type: str = "stock",
+    sector: str = "technology",
+    region: str = "us_growth",
+    role: str = "leader",
+    priority: str = "leader",
+) -> Signal:
+    return Signal(
+        symbol=symbol,
+        name=symbol,
+        instrument_type=instrument_type,
+        action="BUY",
+        strategy="trend_pullback",
+        date="2026-05-01",
+        price=100.0,
+        entry=100.0,
+        stop=95.0,
+        target=110.0,
+        reward_risk=2.0,
+        qty=4,
+        notional=400.0,
+        estimated_round_trip_cost=3.0,
+        score=score,
+        score_details="base tecnico",
+        meta={
+            "sector": sector,
+            "region": region,
+            "role": role,
+            "priority": priority,
+            "currency": "EUR",
+            "base_currency": "EUR",
+        },
+    )
 
 
 class RiskControlTests(unittest.TestCase):
@@ -275,6 +328,54 @@ class MarketRegimeTests(unittest.TestCase):
         self.assertEqual(regime.state, "risk_off")
         self.assertFalse(regime.new_positions_allowed)
         self.assertEqual(regime.active_min_signal_score, 75.0)
+
+
+class AllocationTests(unittest.TestCase):
+    def test_allocation_blocks_duplicate_sector_against_open_positions(self) -> None:
+        cfg = sample_config()
+        candidates = [
+            sample_buy_signal("NVDA", 90.0, sector="semiconductors", role="ai_leader"),
+            sample_buy_signal("V", 82.0, sector="payments", region="us", role="compounder"),
+        ]
+        open_contexts = [{"symbol": "ASML.AS", "sector": "semiconductors", "region": "europe", "role": "european_leader"}]
+
+        result = select_portfolio_candidates(
+            candidates,
+            open_contexts,
+            {"state": "risk_on"},
+            cfg,
+            max_new_positions=1,
+        )
+
+        self.assertEqual([signal.symbol for signal in result.selected], ["V"])
+        self.assertEqual(candidates[0].action, "WATCH")
+        self.assertIn("settore gia coperto", candidates[0].reason)
+        self.assertEqual((candidates[1].meta or {})["allocation"]["decision"], "SELECTED")
+
+    def test_allocation_prefers_etf_when_market_is_neutral(self) -> None:
+        cfg = sample_config()
+        stock = sample_buy_signal("AAPL", 80.0, instrument_type="stock", sector="consumer_technology")
+        etf = sample_buy_signal(
+            "CSSPX.MI",
+            78.0,
+            instrument_type="etf",
+            sector="broad_market",
+            region="us",
+            role="core_us",
+            priority="core",
+        )
+
+        result = select_portfolio_candidates(
+            [stock, etf],
+            [],
+            {"state": "neutral"},
+            cfg,
+            max_new_positions=1,
+        )
+
+        self.assertEqual([signal.symbol for signal in result.selected], ["CSSPX.MI"])
+        self.assertEqual(stock.action, "WATCH")
+        self.assertEqual((etf.meta or {})["allocation"]["decision"], "SELECTED")
 
 
 class RelativeStrengthTests(unittest.TestCase):

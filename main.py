@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from src.allocation import select_portfolio_candidates
 from src.backtest import format_backtest_report, run_backtest
 from src.config import load_config, load_watchlist
 from src.currency import (
@@ -475,26 +476,32 @@ def main() -> int:
                 actionable_buy_signals.append(signal)
                 all_logged_signals.append(signal)
 
-        ranked_signals = sorted(
-            all_logged_signals,
-            key=lambda s: (s.score or 0.0, s.reward_risk or 0.0, -s.estimated_round_trip_cost),
-            reverse=True,
+        allocation_result = select_portfolio_candidates(
+            actionable_buy_signals,
+            portfolio.open_position_contexts(),
+            market_regime.to_dict(),
+            cfg,
         )
 
-        # Priorità: massimo una nuova posizione per run, scegliendo qualità score, R/R e poi minor costo stimato.
-        actionable_buy_signals.sort(
-            key=lambda s: (s.score or 0.0, s.reward_risk or 0.0, -s.estimated_round_trip_cost),
-            reverse=True,
-        )
         opened_signals: list[Signal] = []
-        if actionable_buy_signals:
-            best_signal = actionable_buy_signals[0]
+        for best_signal in allocation_result.selected:
             if not dry_run:
                 opened = portfolio.open_position(best_signal)
                 if opened:
                     opened_signals.append(best_signal)
             else:
                 opened_signals.append(best_signal)
+
+        ranked_signals = sorted(
+            all_logged_signals,
+            key=lambda s: (
+                (s.meta or {}).get("allocation", {}).get("score", s.score or 0.0),
+                s.score or 0.0,
+                s.reward_risk or 0.0,
+                -s.estimated_round_trip_cost,
+            ),
+            reverse=True,
+        )
 
         if not dry_run:
             append_signals_csv(app.signals_csv, all_logged_signals)
@@ -523,6 +530,7 @@ def main() -> int:
             dry_run=dry_run,
             market_regime=market_regime.to_dict(),
             signal_learning=learning_summary,
+            allocation=allocation_result.summary,
         )
 
         if cfg["run"].get("save_reports", True) and not dry_run:

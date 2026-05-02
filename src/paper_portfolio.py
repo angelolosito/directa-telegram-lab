@@ -146,6 +146,25 @@ class PaperPortfolio:
         except Exception:
             return {}
 
+    def open_position_contexts(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM positions WHERE status = 'OPEN'").fetchall()
+        contexts: list[dict] = []
+        for row in rows:
+            meta = self._row_meta(row)
+            contexts.append(
+                {
+                    "symbol": row["symbol"],
+                    "name": row["name"],
+                    "instrument_type": row["instrument_type"],
+                    "region": meta.get("region"),
+                    "sector": meta.get("sector"),
+                    "role": meta.get("role"),
+                    "priority": meta.get("priority"),
+                    "currency": meta.get("currency"),
+                }
+            )
+        return contexts
+
     def realized_monthly_pnl(self, reference_date: date) -> float:
         start = reference_date.replace(day=1).isoformat()
         end = reference_date.isoformat()

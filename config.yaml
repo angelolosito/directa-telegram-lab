@@ -28,6 +28,21 @@ backtest:
   min_rows_required: 220
   max_new_positions_per_day: 1
 
+allocation:
+  enabled: true
+  max_new_positions_per_run: 1
+  max_same_sector_open: 1
+  max_same_role_open: 1
+  max_same_region_open: 2
+  cautious_regime_states: [neutral]
+  cautious_etf_bonus: 4
+  cautious_stock_penalty: 3
+  leader_priority_bonus: 2
+  strong_relative_bonus: 1
+  very_strong_relative_bonus: 2
+  weak_relative_penalty: 3
+  max_cost_penalty_pct: 2
+
 learning:
   enabled: true
   horizons_sessions: [5, 10, 20, 40]
