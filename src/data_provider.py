@@ -115,6 +115,7 @@ def fetch_daily_data(
     retry_backoff_seconds: float = 3.0,
     cache_dir: str | Path | None = None,
     use_cache_on_failure: bool = True,
+    fallback_symbols: list[str] | None = None,
 ) -> pd.DataFrame:
     tz = ZoneInfo(timezone)
     end = datetime.now(tz=tz).date() + timedelta(days=1)
@@ -122,36 +123,50 @@ def fetch_daily_data(
 
     attempts = max(1, retries + 1)
     deadline_seconds = max(process_timeout, request_timeout)
-    last_error: Exception | None = None
+    source_symbols = [symbol]
+    for fallback in fallback_symbols or []:
+        if fallback and fallback not in source_symbols:
+            source_symbols.append(fallback)
+    source_errors: list[str] = []
     df = pd.DataFrame()
+    used_symbol = symbol
 
-    for attempt in range(1, attempts + 1):
-        try:
-            df = _download_with_deadline(
-                symbol=symbol,
-                start=start.isoformat(),
-                end=end.isoformat(),
-                request_timeout=request_timeout,
-                deadline_seconds=deadline_seconds,
-            )
-            if not df.empty:
-                break
-            last_error = DataProviderError(f"Nessun dato ricevuto per {symbol}")
-        except Exception as e:  # noqa: BLE001
-            last_error = e
+    for source_symbol in source_symbols:
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                df = _download_with_deadline(
+                    symbol=source_symbol,
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                    request_timeout=request_timeout,
+                    deadline_seconds=deadline_seconds,
+                )
+                if not df.empty:
+                    used_symbol = source_symbol
+                    break
+                last_error = DataProviderError(f"Nessun dato ricevuto per {source_symbol}")
+            except Exception as e:  # noqa: BLE001
+                last_error = e
 
-        if attempt == attempts:
-            cached = _read_cached_daily(cache_dir, symbol) if use_cache_on_failure else None
-            if cached is not None:
-                df = cached
+            if attempt == attempts:
+                cached = _read_cached_daily(cache_dir, source_symbol) if use_cache_on_failure else None
+                if cached is not None:
+                    df = cached
+                    used_symbol = source_symbol
+                    break
+                source_errors.append(f"{source_symbol}: {last_error}")
                 break
-            raise DataProviderError(
-                f"{symbol}: download dati non riuscito dopo {attempts} tentativi: {last_error}"
-            ) from last_error
-        time.sleep(retry_backoff_seconds * attempt)
+            time.sleep(retry_backoff_seconds * attempt)
+        if not df.empty:
+            break
 
     if df.empty:
-        raise DataProviderError(f"Nessun dato ricevuto per {symbol}")
+        fallback_text = f" Fallback provati: {', '.join(source_symbols[1:])}." if len(source_symbols) > 1 else ""
+        raise DataProviderError(
+            f"{symbol}: download dati non riuscito dopo {attempts} tentativi.{fallback_text} "
+            f"Dettagli: {'; '.join(source_errors) or 'nessun dato ricevuto'}"
+        )
 
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] for col in df.columns]
@@ -163,5 +178,9 @@ def fetch_daily_data(
 
     df = df.dropna(subset=["Open", "High", "Low", "Close"])
     df.index = pd.to_datetime(df.index)
-    _write_cached_daily(cache_dir, symbol, df)
-    return add_indicators(df)
+    _write_cached_daily(cache_dir, used_symbol, df)
+    if used_symbol != symbol:
+        _write_cached_daily(cache_dir, symbol, df)
+    result = add_indicators(df)
+    result.attrs["source_symbol"] = used_symbol
+    return result

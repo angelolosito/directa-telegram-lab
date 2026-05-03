@@ -17,6 +17,8 @@ data:
   retry_backoff_seconds: 3
   cache_enabled: true
   use_cache_on_failure: true
+  ticker_fallbacks:
+    EXW1.MI: [EXW1.DE]
 
 currency:
   lookback_days: 14

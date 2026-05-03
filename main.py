@@ -30,6 +30,7 @@ from src.scenario import build_scenario_report
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
 from src.telegram_notifier import TelegramNotifier
+from src.ticker_mapping import fallback_symbols
 
 
 SIGNAL_CSV_FIELDNAMES = [
@@ -139,6 +140,7 @@ def fetch_relative_strength_data(
                 retry_backoff_seconds=retry_backoff_seconds,
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
+                fallback_symbols=fallback_symbols(cfg, symbol),
             )
             if len(df.dropna(subset=["Close"])) < min_rows:
                 errors.append(f"{symbol}: storico insufficiente per forza relativa.")
@@ -184,6 +186,7 @@ def fetch_currency_data(
                 retry_backoff_seconds=retry_backoff_seconds,
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
+                fallback_symbols=fallback_symbols(cfg, symbol),
             )
             fx_data[symbol] = df
         except DataProviderError as e:
@@ -274,6 +277,7 @@ def main() -> int:
                     retry_backoff_seconds=retry_backoff_seconds,
                     cache_dir=market_data_cache,
                     use_cache_on_failure=use_cache_on_failure,
+                    fallback_symbols=fallback_symbols(cfg, symbol, instrument),
                 )
                 if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                     errors.append(f"{symbol}: storico insufficiente per backtest.")
@@ -396,6 +400,7 @@ def main() -> int:
                     retry_backoff_seconds=retry_backoff_seconds,
                     cache_dir=market_data_cache,
                     use_cache_on_failure=use_cache_on_failure,
+                    fallback_symbols=fallback_symbols(cfg, symbol, instrument),
                 )
                 if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                     errors.append(f"{symbol}: storico insufficiente dopo calcolo SMA200.")

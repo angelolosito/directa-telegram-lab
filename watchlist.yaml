@@ -58,6 +58,9 @@ watchlist:
     priority: core
     currency: EUR
     benchmark: SWDA.MI
+    isin: DE0005933956
+    yahoo_fallbacks: [EXW1.DE]
+    tradingview_symbol: XETR:EXW1
     universe_score: 4
     enabled: true
 

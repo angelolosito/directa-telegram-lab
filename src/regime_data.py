@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .data_provider import DataProviderError, fetch_daily_data
 from .market_regime import configured_benchmarks
+from .ticker_mapping import fallback_symbols
 
 
 def _regime_clean_rows(df) -> int:
@@ -57,6 +58,7 @@ def fetch_market_regime_data(
                 retry_backoff_seconds=retry_backoff_seconds,
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
+                fallback_symbols=fallback_symbols(cfg, symbol, benchmark),
             )
             clean_rows = _regime_clean_rows(df)
             if clean_rows >= min_rows:

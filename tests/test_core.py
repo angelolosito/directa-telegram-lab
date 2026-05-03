@@ -12,6 +12,7 @@ from src.allocation import select_portfolio_candidates
 from src.backtest import BacktestResult, BacktestTrade, run_backtest
 from src.calibration import build_calibration_report
 from src.costs import estimate_round_trip_cost
+from src.data_provider import fetch_daily_data
 from src.fundamentals import FundamentalSnapshot, apply_fundamental_review, evaluate_fundamentals
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
 from src.market_regime import evaluate_market_regime
@@ -27,6 +28,7 @@ from src.report import build_daily_message
 from src.scenario import apply_scenario, build_scenario_report, default_scenarios
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
 from src.strategy import Signal, analyze_buy_signals, score_signal
+from src.ticker_mapping import fallback_symbols
 
 
 def sample_config() -> dict:
@@ -468,6 +470,45 @@ class MarketRegimeTests(unittest.TestCase):
         self.assertEqual(regime.state, "risk_off")
         self.assertFalse(regime.new_positions_allowed)
         self.assertEqual(regime.active_min_signal_score, 75.0)
+
+
+class DataProviderFallbackTests(unittest.TestCase):
+    def test_fetch_daily_data_uses_fallback_symbol(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=30, freq="D")
+        fallback_df = pd.DataFrame(
+            {
+                "Open": [10.0] * 30,
+                "High": [10.5] * 30,
+                "Low": [9.5] * 30,
+                "Close": [10.0 + idx * 0.1 for idx in range(30)],
+                "Volume": [1000] * 30,
+            },
+            index=dates,
+        )
+
+        def fake_download(symbol, start, end, request_timeout, deadline_seconds):  # noqa: ARG001
+            if symbol == "EXW1.MI":
+                return pd.DataFrame()
+            return fallback_df
+
+        with patch("src.data_provider._download_with_deadline", side_effect=fake_download):
+            result = fetch_daily_data(
+                "EXW1.MI",
+                lookback_days=60,
+                timezone="Europe/Rome",
+                retries=0,
+                fallback_symbols=["EXW1.DE"],
+            )
+
+        self.assertFalse(result.empty)
+        self.assertEqual(result.attrs["source_symbol"], "EXW1.DE")
+        self.assertIn("SMA20", result.columns)
+
+    def test_configured_ticker_fallbacks_are_deduped(self) -> None:
+        cfg = {"data": {"ticker_fallbacks": {"EXW1.MI": ["EXW1.DE", "EXW1.DE"]}}}
+        instrument = {"symbol": "EXW1.MI", "yahoo_fallbacks": ["EXW1.DE", "EXW1.F"]}  # noqa: RUF012
+
+        self.assertEqual(fallback_symbols(cfg, "EXW1.MI", instrument), ["EXW1.DE", "EXW1.F"])
 
 
 class AllocationTests(unittest.TestCase):
