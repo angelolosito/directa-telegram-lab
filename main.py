@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import sys
+
+if "--import-manual-positions" in sys.argv:
+    from src.manual_position_importer import run_manual_import_cli
+
+    raise SystemExit(run_manual_import_cli(sys.argv[1:]))
+
 import argparse
 import csv
 import shutil

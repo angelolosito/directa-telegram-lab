@@ -134,6 +134,8 @@ python main.py --import-manual-positions
 
 Il comando legge `data/manual_positions.csv`, archivia il vecchio SQLite in `state/archive/` e crea un conto paper pulito con quelle posizioni aperte. I prezzi di strumenti italiani come `ENEL.MI` ed `ENI.MI` vengono tracciati in euro; eventuali valori mostrati da TradingView in USD restano salvati nel CSV solo come riferimento.
 
+Questo import e volutamente leggero: puo essere lanciato anche con il Python base del Mac (`python3`) senza installare `pandas` o `PyYAML`.
+
 Per inviare Telegram in locale:
 
 ```bash
