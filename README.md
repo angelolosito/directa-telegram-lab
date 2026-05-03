@@ -194,6 +194,8 @@ data:
   download_retries: 2
   cache_enabled: true
   use_cache_on_failure: true
+  cache_first_for_reports: true
+  cache_only_for_reports: true
   ticker_fallbacks:
     EXW1.MI: [EXW1.DE]
 
@@ -289,6 +291,7 @@ costs:
 `market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile o unknown blocca nuovi ingressi paper.
 Il regime usa uno storico più lungo dei singoli segnali, perché dopo la SMA200 servono abbastanza sedute valide. Se il refetch lungo fallisce ma esiste già uno storico classificabile, il bot lo usa con warning invece di cadere automaticamente in `unknown`.
 `ticker_fallbacks` gestisce i ticker fragili tra provider: per esempio `EXW1.MI` può fallire su Yahoo, quindi il bot prova `EXW1.DE` come fonte dati alternativa mantenendo lo strumento logico in watchlist.
+I report storici usano prima la cache locale e, di default, non fanno download live: questo evita che backtest e scenari restino bloccati su provider esterni. Per forzare aggiornamenti live nei report, imposta `cache_first_for_reports: false` e `cache_only_for_reports: false`.
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 `learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.

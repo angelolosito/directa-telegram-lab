@@ -17,6 +17,8 @@ data:
   retry_backoff_seconds: 3
   cache_enabled: true
   use_cache_on_failure: true
+  cache_first_for_reports: true
+  cache_only_for_reports: true
   ticker_fallbacks:
     EXW1.MI: [EXW1.DE]
 

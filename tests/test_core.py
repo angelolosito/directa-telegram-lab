@@ -553,6 +553,35 @@ class MarketRegimeTests(unittest.TestCase):
 
 
 class DataProviderFallbackTests(unittest.TestCase):
+    def test_fetch_daily_data_can_use_cache_before_download(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=30, freq="D")
+        cached_df = pd.DataFrame(
+            {
+                "Open": [10.0] * 30,
+                "High": [10.5] * 30,
+                "Low": [9.5] * 30,
+                "Close": [10.0 + idx * 0.1 for idx in range(30)],
+                "Volume": [1000] * 30,
+            },
+            index=dates,
+        )
+
+        with TemporaryDirectory() as tmp:
+            cached_df.to_csv(Path(tmp) / "TEST.MI.csv")
+            with patch("src.data_provider._download_with_deadline", side_effect=AssertionError("download chiamato")):
+                result = fetch_daily_data(
+                    "TEST.MI",
+                    lookback_days=60,
+                    timezone="Europe/Rome",
+                    cache_dir=tmp,
+                    prefer_cache=True,
+                    cache_only=True,
+                )
+
+        self.assertFalse(result.empty)
+        self.assertEqual(result.attrs["source_symbol"], "TEST.MI")
+        self.assertIn("SMA20", result.columns)
+
     def test_fetch_daily_data_uses_fallback_symbol(self) -> None:
         dates = pd.date_range("2026-01-01", periods=30, freq="D")
         fallback_df = pd.DataFrame(

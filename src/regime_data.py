@@ -27,6 +27,8 @@ def fetch_market_regime_data(
     retry_backoff_seconds: float = 3.0,
     cache_dir: Path | None = None,
     use_cache_on_failure: bool = True,
+    prefer_cache: bool = False,
+    cache_only: bool = False,
 ) -> tuple[dict, list[str]]:
     regime_data = {}
     errors: list[str] = []
@@ -59,6 +61,8 @@ def fetch_market_regime_data(
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
                 fallback_symbols=fallback_symbols(cfg, symbol, benchmark),
+                prefer_cache=prefer_cache,
+                cache_only=cache_only,
             )
             clean_rows = _regime_clean_rows(df)
             if clean_rows >= min_rows:

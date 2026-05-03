@@ -117,6 +117,8 @@ def fetch_relative_strength_data(
     retry_backoff_seconds: float = 3.0,
     cache_dir: Path | None = None,
     use_cache_on_failure: bool = True,
+    prefer_cache: bool = False,
+    cache_only: bool = False,
 ) -> tuple[dict, list[str]]:
     relative_data = {}
     errors: list[str] = []
@@ -149,6 +151,8 @@ def fetch_relative_strength_data(
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
                 fallback_symbols=fallback_symbols(cfg, symbol),
+                prefer_cache=prefer_cache,
+                cache_only=cache_only,
             )
             if len(df.dropna(subset=["Close"])) < min_rows:
                 errors.append(f"{symbol}: storico insufficiente per forza relativa.")
@@ -171,6 +175,8 @@ def fetch_currency_data(
     retry_backoff_seconds: float = 3.0,
     cache_dir: Path | None = None,
     use_cache_on_failure: bool = True,
+    prefer_cache: bool = False,
+    cache_only: bool = False,
 ) -> tuple[dict, list[str]]:
     fx_data = {}
     errors: list[str] = []
@@ -195,6 +201,8 @@ def fetch_currency_data(
                 cache_dir=cache_dir,
                 use_cache_on_failure=use_cache_on_failure,
                 fallback_symbols=fallback_symbols(cfg, symbol),
+                prefer_cache=prefer_cache,
+                cache_only=cache_only,
             )
             fx_data[symbol] = df
         except DataProviderError as e:
@@ -298,6 +306,8 @@ def main() -> int:
     retry_backoff_seconds = float(data_cfg.get("retry_backoff_seconds", 3.0))
     use_cache_on_failure = bool(data_cfg.get("use_cache_on_failure", True))
     market_data_cache = app.market_data_cache if bool(data_cfg.get("cache_enabled", True)) else None
+    cache_first_for_reports = bool(data_cfg.get("cache_first_for_reports", True))
+    cache_only_for_reports = bool(data_cfg.get("cache_only_for_reports", True))
 
     if args.backtest or args.calibration_report or args.scenario_report:
         backtest_cfg = cfg.get("backtest", {})
@@ -323,6 +333,8 @@ def main() -> int:
                     cache_dir=market_data_cache,
                     use_cache_on_failure=use_cache_on_failure,
                     fallback_symbols=fallback_symbols(cfg, symbol, instrument),
+                    prefer_cache=cache_first_for_reports,
+                    cache_only=cache_only_for_reports,
                 )
                 if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
                     errors.append(f"{symbol}: storico insufficiente per backtest.")
@@ -343,6 +355,8 @@ def main() -> int:
             retry_backoff_seconds,
             market_data_cache,
             use_cache_on_failure,
+            cache_first_for_reports,
+            cache_only_for_reports,
         )
         errors.extend(fx_errors)
         fx_pairs = configured_currency_pairs(watchlist, cfg)
@@ -362,6 +376,8 @@ def main() -> int:
             retry_backoff_seconds,
             market_data_cache,
             use_cache_on_failure,
+            cache_first_for_reports,
+            cache_only_for_reports,
         )
         errors.extend(regime_errors)
         relative_strength_data, relative_errors = fetch_relative_strength_data(
@@ -376,6 +392,8 @@ def main() -> int:
             retry_backoff_seconds,
             market_data_cache,
             use_cache_on_failure,
+            cache_first_for_reports,
+            cache_only_for_reports,
         )
         errors.extend(relative_errors)
 

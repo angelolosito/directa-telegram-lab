@@ -116,6 +116,8 @@ def fetch_daily_data(
     cache_dir: str | Path | None = None,
     use_cache_on_failure: bool = True,
     fallback_symbols: list[str] | None = None,
+    prefer_cache: bool = False,
+    cache_only: bool = False,
 ) -> pd.DataFrame:
     tz = ZoneInfo(timezone)
     end = datetime.now(tz=tz).date() + timedelta(days=1)
@@ -131,35 +133,53 @@ def fetch_daily_data(
     df = pd.DataFrame()
     used_symbol = symbol
 
-    for source_symbol in source_symbols:
-        last_error: Exception | None = None
-        for attempt in range(1, attempts + 1):
-            try:
-                df = _download_with_deadline(
-                    symbol=source_symbol,
-                    start=start.isoformat(),
-                    end=end.isoformat(),
-                    request_timeout=request_timeout,
-                    deadline_seconds=deadline_seconds,
-                )
-                if not df.empty:
-                    used_symbol = source_symbol
-                    break
-                last_error = DataProviderError(f"Nessun dato ricevuto per {source_symbol}")
-            except Exception as e:  # noqa: BLE001
-                last_error = e
-
-            if attempt == attempts:
-                cached = _read_cached_daily(cache_dir, source_symbol) if use_cache_on_failure else None
-                if cached is not None:
-                    df = cached
-                    used_symbol = source_symbol
-                    break
-                source_errors.append(f"{source_symbol}: {last_error}")
+    if prefer_cache or cache_only:
+        for source_symbol in source_symbols:
+            cached = _read_cached_daily(cache_dir, source_symbol)
+            if cached is not None:
+                df = cached
+                used_symbol = source_symbol
                 break
-            time.sleep(retry_backoff_seconds * attempt)
-        if not df.empty:
-            break
+        if df.empty and cache_only:
+            fallback_text = (
+                f" Fallback cercati in cache: {', '.join(source_symbols[1:])}."
+                if len(source_symbols) > 1
+                else ""
+            )
+            raise DataProviderError(
+                f"{symbol}: dato non presente in cache; download live disattivato.{fallback_text}"
+            )
+
+    if df.empty:
+        for source_symbol in source_symbols:
+            last_error: Exception | None = None
+            for attempt in range(1, attempts + 1):
+                try:
+                    df = _download_with_deadline(
+                        symbol=source_symbol,
+                        start=start.isoformat(),
+                        end=end.isoformat(),
+                        request_timeout=request_timeout,
+                        deadline_seconds=deadline_seconds,
+                    )
+                    if not df.empty:
+                        used_symbol = source_symbol
+                        break
+                    last_error = DataProviderError(f"Nessun dato ricevuto per {source_symbol}")
+                except Exception as e:  # noqa: BLE001
+                    last_error = e
+
+                if attempt == attempts:
+                    cached = _read_cached_daily(cache_dir, source_symbol) if use_cache_on_failure else None
+                    if cached is not None:
+                        df = cached
+                        used_symbol = source_symbol
+                        break
+                    source_errors.append(f"{source_symbol}: {last_error}")
+                    break
+                time.sleep(retry_backoff_seconds * attempt)
+            if not df.empty:
+                break
 
     if df.empty:
         fallback_text = f" Fallback provati: {', '.join(source_symbols[1:])}." if len(source_symbols) > 1 else ""
