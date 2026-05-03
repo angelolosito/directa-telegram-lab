@@ -1,0 +1,3 @@
+symbol,name,instrument_type,side,qty,avg_fill_price,take_profit,stop_loss,last_price,entry_date,currency,base_currency,tradingview_symbol,trade_value_display,market_value_display,unrealized_pnl_display,unrealized_pnl_pct_display,source
+ENEL.MI,Enel,stock,Long,50,9.649,10.581,9.300,9.924,2026-05-03,EUR,EUR,MIL:ENEL,564.73 USD,580.83 USD,16.10 USD,2.85,TradingView demo
+ENI.MI,Eni,stock,Long,17,23.640,26.515,22.150,24.000,2026-05-03,EUR,EUR,MIL:ENI,470.42 USD,477.58 USD,7.16 USD,1.52,TradingView demo

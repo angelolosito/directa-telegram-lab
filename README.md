@@ -126,6 +126,14 @@ python main.py --reset-paper-portfolio
 
 Questo comando sposta il vecchio SQLite in `state/archive/` e crea un nuovo conto paper da `risk.initial_capital`.
 
+Per sincronizzare il conto paper con posizioni gia aperte in TradingView demo:
+
+```bash
+python main.py --import-manual-positions
+```
+
+Il comando legge `data/manual_positions.csv`, archivia il vecchio SQLite in `state/archive/` e crea un conto paper pulito con quelle posizioni aperte. I prezzi di strumenti italiani come `ENEL.MI` ed `ENI.MI` vengono tracciati in euro; eventuali valori mostrati da TradingView in USD restano salvati nel CSV solo come riferimento.
+
 Per inviare Telegram in locale:
 
 ```bash

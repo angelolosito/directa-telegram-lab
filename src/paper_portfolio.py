@@ -186,7 +186,7 @@ class PaperPortfolio:
             """
             SELECT COUNT(*) AS trade_count
             FROM positions
-            WHERE entry_date >= ? AND entry_date <= ?
+            WHERE status != 'ARCHIVED' AND entry_date >= ? AND entry_date <= ?
             """,
             (start, end),
         ).fetchone()
@@ -324,6 +324,106 @@ class PaperPortfolio:
         self.conn.commit()
         self.log_event("OPEN", f"Aperta posizione paper su {signal.symbol}", signal.symbol, signal.to_dict())
         return True
+
+    def import_manual_positions(
+        self,
+        signals: list[Signal],
+        reference_date: date,
+        replace_open: bool = True,
+    ) -> dict:
+        if not signals:
+            return {
+                "imported": 0,
+                "archived_open_positions": 0,
+                "cash": self.cash(),
+                "notional": 0.0,
+                "entry_commissions": 0.0,
+            }
+
+        cur = self.conn.cursor()
+        archived_open_positions = 0
+        if replace_open:
+            archived_open_positions = cur.execute(
+                """
+                UPDATE positions
+                SET status = 'ARCHIVED', exit_date = ?, exit_reason = 'manual_import_replaced'
+                WHERE status = 'OPEN'
+                """,
+                (reference_date.isoformat(),),
+            ).rowcount
+
+        initial_row = cur.execute("SELECT initial_capital FROM account WHERE id = 1").fetchone()
+        initial_capital = float(initial_row["initial_capital"]) if initial_row else float(
+            self.config["risk"].get("initial_capital", 1000.0)
+        )
+        remaining_cash = initial_capital
+        total_notional = 0.0
+        total_commissions = 0.0
+
+        for signal in signals:
+            if signal.qty <= 0 or signal.entry is None or signal.stop is None or signal.target is None:
+                raise ValueError(f"Posizione manuale incompleta: {signal.symbol}")
+
+            meta = signal.meta or {}
+            notional = price_to_base(signal.entry, meta) * signal.qty
+            commission = estimate_commission(notional, self.config["costs"])
+            total_cost = notional + commission
+            if remaining_cash < total_cost:
+                raise ValueError(
+                    f"Liquidità insufficiente per importare {signal.symbol}: "
+                    f"servono {total_cost:.2f}, disponibili {remaining_cash:.2f}."
+                )
+
+            remaining_cash -= total_cost
+            total_notional += notional
+            total_commissions += commission
+            signal.notional = round(notional, 2)
+            signal.estimated_round_trip_cost = estimate_round_trip_cost(notional, self.config["costs"])
+            highest_close = max(signal.price or signal.entry, signal.entry)
+
+            cur.execute(
+                """
+                INSERT INTO positions (
+                    symbol, name, instrument_type, strategy, entry_date, entry_price, qty,
+                    stop, target, highest_close, entry_commission, status, meta
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                """,
+                (
+                    signal.symbol,
+                    signal.name,
+                    signal.instrument_type,
+                    signal.strategy,
+                    signal.date,
+                    signal.entry,
+                    signal.qty,
+                    signal.stop,
+                    signal.target,
+                    highest_close,
+                    commission,
+                    json.dumps(meta, ensure_ascii=False),
+                ),
+            )
+
+        cur.execute("UPDATE account SET cash = ? WHERE id = 1", (round(remaining_cash, 2),))
+        self.conn.commit()
+        self.log_event(
+            "MANUAL_IMPORT",
+            f"Importate {len(signals)} posizioni manuali nel paper portfolio.",
+            payload={
+                "symbols": [signal.symbol for signal in signals],
+                "archived_open_positions": archived_open_positions,
+                "notional": round(total_notional, 2),
+                "entry_commissions": round(total_commissions, 2),
+                "cash": round(remaining_cash, 2),
+            },
+        )
+        return {
+            "imported": len(signals),
+            "archived_open_positions": archived_open_positions,
+            "cash": round(remaining_cash, 2),
+            "notional": round(total_notional, 2),
+            "entry_commissions": round(total_commissions, 2),
+        }
 
     def update_open_positions(
         self,
@@ -514,8 +614,10 @@ class PaperPortfolio:
             entry_price = float(row["entry_price"])
             stop = float(row["stop"])
             entry_commission = float(row["entry_commission"])
-            close = self._latest_close(row["symbol"], market_data) or entry_price
             meta = self._row_meta(row)
+            close = self._latest_close(row["symbol"], market_data)
+            if close is None:
+                close = float(meta.get("manual_last_price") or entry_price)
 
             exit_notional = price_to_base(close, meta) * qty
             exit_commission = estimate_commission(exit_notional, self.config["costs"])

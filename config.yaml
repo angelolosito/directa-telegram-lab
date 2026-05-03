@@ -225,3 +225,4 @@ paths:
   signal_evaluations: data/signal_evaluations.csv
   fundamentals_cache: data/fundamentals_cache.json
   market_data_cache: data/market_cache
+  manual_positions: data/manual_positions.csv

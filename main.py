@@ -20,6 +20,7 @@ from src.currency import (
 from src.data_provider import DataProviderError, fetch_daily_data
 from src.fundamentals import apply_fundamental_review, fetch_fundamental_snapshot
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
+from src.manual_positions import load_manual_positions
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio, archive_and_reset_database
@@ -208,6 +209,12 @@ def main() -> int:
     parser.add_argument("--scenario-report", action="store_true", help="Compare multiple strategy/risk configurations")
     parser.add_argument("--learning-report", action="store_true", help="Print the signal learning journal report and exit")
     parser.add_argument("--reset-paper-portfolio", action="store_true", help="Archive the current paper DB and start from zero")
+    parser.add_argument(
+        "--import-manual-positions",
+        action="store_true",
+        help="Archive the paper DB and import manual positions from CSV",
+    )
+    parser.add_argument("--manual-positions-file", default=None, help="Override manual positions CSV path")
     args = parser.parse_args()
 
     app = load_config(args.base_dir)
@@ -234,6 +241,37 @@ def main() -> int:
             print(f"Paper portfolio azzerato. Archivio creato: {archived}")
         else:
             print("Paper portfolio inizializzato da zero. Nessun database precedente da archiviare.")
+        return 0
+
+    if args.import_manual_positions:
+        if args.manual_positions_file:
+            manual_positions_path = Path(args.manual_positions_file)
+            if not manual_positions_path.is_absolute():
+                manual_positions_path = app.base_dir / manual_positions_path
+        else:
+            manual_positions_path = app.manual_positions_csv
+        manual_signals = load_manual_positions(manual_positions_path)
+        archived = archive_and_reset_database(app.database_path)
+        portfolio = PaperPortfolio(app.database_path, cfg)
+        try:
+            result = portfolio.import_manual_positions(manual_signals, today, replace_open=False)
+            summary = portfolio.summary()
+        finally:
+            portfolio.close()
+        print(f"Import posizioni manuali completato da: {manual_positions_path}")
+        if archived:
+            print(f"Archivio database precedente: {archived}")
+        print(
+            "Posizioni importate: "
+            f"{result['imported']} | Notional: {result['notional']:.2f} € | "
+            f"Commissioni ingresso stimate: {result['entry_commissions']:.2f} € | "
+            f"Cash residuo: {result['cash']:.2f} €"
+        )
+        print(
+            "Equity stimata con ultimi prezzi TradingView: "
+            f"{summary['equity']:.2f} € | P/L totale: {summary['total_pnl']:.2f} € "
+            f"({summary['total_return_pct']:.2f}%)"
+        )
         return 0
 
     if args.learning_report:

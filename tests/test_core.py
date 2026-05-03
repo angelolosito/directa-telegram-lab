@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import unittest
 from datetime import date
 from pathlib import Path
@@ -15,6 +16,7 @@ from src.costs import estimate_round_trip_cost
 from src.data_provider import fetch_daily_data
 from src.fundamentals import FundamentalSnapshot, apply_fundamental_review, evaluate_fundamentals
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
+from src.manual_positions import MANUAL_POSITION_FIELDNAMES, load_manual_positions
 from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio, archive_and_reset_database
@@ -330,6 +332,84 @@ class RiskControlTests(unittest.TestCase):
         self.assertEqual(sized.qty, 2.5)
         self.assertEqual(sized.notional, 450.0)
         self.assertEqual(estimate_round_trip_cost(sized.notional, cfg["costs"]), 2.0)
+
+    def test_import_manual_tradingview_positions_starts_clean_tracking(self) -> None:
+        cfg = sample_config()
+        cfg["costs"] = {
+            "broker": "Trade Republic",
+            "fixed_commission": 1.0,
+            "fractional_enabled": True,
+            "quantity_precision": 6,
+            "min_order_notional": 1.0,
+        }
+        rows = [
+            {
+                "symbol": "ENEL.MI",
+                "name": "Enel",
+                "instrument_type": "stock",
+                "side": "Long",
+                "qty": "50",
+                "avg_fill_price": "9.649",
+                "take_profit": "10.581",
+                "stop_loss": "9.300",
+                "last_price": "9.924",
+                "entry_date": "2026-05-03",
+                "currency": "EUR",
+                "base_currency": "EUR",
+                "tradingview_symbol": "MIL:ENEL",
+                "trade_value_display": "564.73 USD",
+                "market_value_display": "580.83 USD",
+                "unrealized_pnl_display": "16.10 USD",
+                "unrealized_pnl_pct_display": "2.85",
+                "source": "TradingView demo",
+            },
+            {
+                "symbol": "ENI.MI",
+                "name": "Eni",
+                "instrument_type": "stock",
+                "side": "Long",
+                "qty": "17",
+                "avg_fill_price": "23.640",
+                "take_profit": "26.515",
+                "stop_loss": "22.150",
+                "last_price": "24.000",
+                "entry_date": "2026-05-03",
+                "currency": "EUR",
+                "base_currency": "EUR",
+                "tradingview_symbol": "MIL:ENI",
+                "trade_value_display": "470.42 USD",
+                "market_value_display": "477.58 USD",
+                "unrealized_pnl_display": "7.16 USD",
+                "unrealized_pnl_pct_display": "1.52",
+                "source": "TradingView demo",
+            },
+        ]
+
+        with TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "manual_positions.csv"
+            with csv_path.open("w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=MANUAL_POSITION_FIELDNAMES)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            signals = load_manual_positions(csv_path)
+            portfolio = PaperPortfolio(Path(tmp) / "lab.sqlite", cfg)
+            result = portfolio.import_manual_positions(signals, date(2026, 5, 3))
+            open_positions = portfolio.open_positions()
+            summary = portfolio.summary()
+            portfolio.close()
+
+        self.assertEqual(result["imported"], 2)
+        self.assertEqual(result["notional"], 884.33)
+        self.assertEqual(result["entry_commissions"], 2.0)
+        self.assertEqual(result["cash"], 113.67)
+        self.assertEqual(len(open_positions), 2)
+        self.assertEqual(open_positions[0].symbol, "ENEL.MI")
+        self.assertEqual(open_positions[0].qty, 50.0)
+        self.assertEqual(open_positions[0].stop, 9.3)
+        self.assertEqual(open_positions[0].target, 10.581)
+        self.assertEqual(summary["open_market_value"], 904.2)
+        self.assertEqual(summary["equity"], 1015.87)
 
     def test_signal_score_includes_cost_penalty(self) -> None:
         cfg = sample_config()
