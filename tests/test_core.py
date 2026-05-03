@@ -22,6 +22,7 @@ from src.relative_strength import (
     benchmark_for_instrument,
     configured_relative_strength_benchmarks,
 )
+from src.regime_data import fetch_market_regime_data
 from src.report import build_daily_message
 from src.scenario import apply_scenario, build_scenario_report, default_scenarios
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
@@ -394,6 +395,42 @@ class RiskControlTests(unittest.TestCase):
 
 
 class MarketRegimeTests(unittest.TestCase):
+    def test_regime_uses_usable_known_data_when_refetch_fails(self) -> None:
+        cfg = sample_config()
+        cfg["market_regime"] = {
+            "enabled": True,
+            "lookback_days": 760,
+            "min_rows_required": 220,
+            "min_usable_rows_required": 30,
+            "benchmarks": [{"symbol": "BENCH.MI", "name": "Benchmark"}],
+        }
+        dates = pd.date_range("2026-01-01", periods=60, freq="D")
+        benchmark = pd.DataFrame(
+            {
+                "Close": [100.0 + idx for idx in range(60)],
+                "SMA50": [95.0 + idx for idx in range(60)],
+                "SMA200": [90.0 + idx for idx in range(60)],
+            },
+            index=dates,
+        )
+
+        with patch("src.regime_data.fetch_daily_data", side_effect=RuntimeError("rete non disponibile")):
+            regime_data, errors = fetch_market_regime_data(
+                cfg,
+                {"BENCH.MI": benchmark},
+                "Europe/Rome",
+                520,
+                6,
+                2,
+                20,
+            )
+
+        regime = evaluate_market_regime(regime_data, cfg, 60.0, date(2026, 2, 28))
+
+        self.assertIn("BENCH.MI", regime_data)
+        self.assertEqual(regime.state, "risk_on")
+        self.assertTrue(any("uso storico gia disponibile" in error for error in errors))
+
     def test_unknown_market_regime_blocks_new_positions(self) -> None:
         cfg = sample_config()
         cfg["market_regime"] = {

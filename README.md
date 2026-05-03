@@ -230,6 +230,8 @@ fundamentals:
 
 market_regime:
   enabled: true
+  lookback_days: 760
+  min_usable_rows_required: 30
   unknown_score_boost: 15
   neutral_score_boost: 5
   risk_off_score_boost: 15
@@ -273,6 +275,7 @@ costs:
 
 `min_signal_score` blocca i segnali tecnicamente validi ma qualitativamente deboli. Lo score considera forza del trend, RSI, rischio percentuale, volumi, rapporto rischio/rendimento e incidenza dei costi.
 `market_regime` controlla il contesto generale: in mercato neutrale alza la soglia score, in mercato fragile o unknown blocca nuovi ingressi paper.
+Il regime usa uno storico più lungo dei singoli segnali, perché dopo la SMA200 servono abbastanza sedute valide. Se il refetch lungo fallisce ma esiste già uno storico classificabile, il bot lo usa con warning invece di cadere automaticamente in `unknown`.
 `opportunity` evita di inseguire prezzi troppo estesi: un segnale può diventare WATCH se il timing non è pulito, anche quando la strategia tecnica lo aveva generato.
 `setup_watch_min_score` e `near_breakout_pct` alimentano il radar dei setup quasi pronti nella classifica candidati.
 `learning` alimenta il diario intelligente in `data/signal_journal.csv` e `data/signal_evaluations.csv`: col tempo il bot misura quali setup hanno funzionato meglio. Il feedback adattivo si attiva solo dopo un numero minimo di casi simili.

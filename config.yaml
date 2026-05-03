@@ -146,8 +146,9 @@ relative_strength:
 
 market_regime:
   enabled: true
-  lookback_days: 360
+  lookback_days: 760
   min_rows_required: 220
+  min_usable_rows_required: 30
   unknown_score_boost: 15
   neutral_score_boost: 5
   risk_off_score_boost: 15

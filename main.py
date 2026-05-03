@@ -20,10 +20,11 @@ from src.currency import (
 from src.data_provider import DataProviderError, fetch_daily_data
 from src.fundamentals import apply_fundamental_review, fetch_fundamental_snapshot
 from src.learning_feedback import apply_learning_feedback, load_learning_stats
-from src.market_regime import configured_benchmarks, evaluate_market_regime
+from src.market_regime import evaluate_market_regime
 from src.opportunity import review_opportunity
 from src.paper_portfolio import PaperPortfolio, archive_and_reset_database
 from src.relative_strength import apply_relative_strength, configured_relative_strength_benchmarks
+from src.regime_data import fetch_market_regime_data
 from src.report import build_daily_message, save_markdown_report
 from src.scenario import build_scenario_report
 from src.signal_journal import append_signal_journal, build_learning_report, update_signal_evaluations
@@ -93,60 +94,6 @@ def append_signals_csv(path: Path, signals: list[Signal]) -> None:
                     "reason": s.reason,
                 }
             )
-
-
-def fetch_market_regime_data(
-    cfg: dict,
-    known_market_data: dict,
-    timezone: str,
-    lookback_days: int,
-    request_timeout: int,
-    download_retries: int,
-    process_timeout: int,
-    retry_backoff_seconds: float = 3.0,
-    cache_dir: Path | None = None,
-    use_cache_on_failure: bool = True,
-) -> tuple[dict, list[str]]:
-    regime_data = {}
-    errors: list[str] = []
-    benchmarks = configured_benchmarks(cfg)
-    if not benchmarks:
-        return regime_data, errors
-
-    regime_cfg = cfg.get("market_regime", {})
-    regime_lookback_days = int(regime_cfg.get("lookback_days", max(lookback_days, 320)))
-    min_rows = int(regime_cfg.get("min_rows_required", 220))
-
-    for benchmark in benchmarks:
-        symbol = benchmark["symbol"]
-        if symbol in known_market_data:
-            df = known_market_data[symbol]
-            if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
-                errors.append(f"{symbol}: storico insufficiente per filtro regime mercato.")
-            else:
-                regime_data[symbol] = df
-            continue
-        try:
-            df = fetch_daily_data(
-                symbol,
-                lookback_days=regime_lookback_days,
-                timezone=timezone,
-                request_timeout=request_timeout,
-                retries=download_retries,
-                process_timeout=process_timeout,
-                retry_backoff_seconds=retry_backoff_seconds,
-                cache_dir=cache_dir,
-                use_cache_on_failure=use_cache_on_failure,
-            )
-            if len(df.dropna(subset=["Close", "SMA200"])) < min_rows:
-                errors.append(f"{symbol}: storico insufficiente per filtro regime mercato.")
-                continue
-            regime_data[symbol] = df
-        except DataProviderError as e:
-            errors.append(str(e))
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{symbol}: errore imprevisto nel filtro regime mercato: {e}")
-    return regime_data, errors
 
 
 def fetch_relative_strength_data(
