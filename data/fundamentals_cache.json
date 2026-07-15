@@ -1,4 +1,40 @@
 {
+  "yfinance:ABBV": {
+    "error": null,
+    "events": {
+      "latest_quarter": null,
+      "next_earnings_date": "2026-07-31"
+    },
+    "fetched_at": "2026-07-15T16:22:21.425187+00:00",
+    "metrics": {
+      "analyst_count": 28.0,
+      "beta": 0.283,
+      "current_price": 247.0001,
+      "current_ratio": 0.796,
+      "debt_to_equity": null,
+      "dividend_yield": 2.83,
+      "earnings_growth": -0.462,
+      "eps_revision_balance": -12.0,
+      "ev_to_ebitda": 16.582,
+      "forward_pe": 15.196192,
+      "free_cashflow": 20811624448.0,
+      "market_cap": 436398030848.0,
+      "operating_cashflow": 21223999488.0,
+      "operating_margin": 0.32156,
+      "payout_ratio": 3.2598002,
+      "price_to_book": -65.56945,
+      "price_to_sales": 6.9469113,
+      "profit_margin": 0.05786,
+      "recommendation_mean": 1.74194,
+      "revenue_growth": 0.124,
+      "roe": null,
+      "target_mean_price": 265.5,
+      "trailing_pe": 121.674934
+    },
+    "provider": "yfinance",
+    "source_symbol": "ABBV",
+    "symbol": "ABBV"
+  },
   "yfinance:AMZN": {
     "error": null,
     "events": {
@@ -327,33 +363,33 @@
     "error": null,
     "events": {
       "latest_quarter": null,
-      "next_earnings_date": "2026-07-23"
+      "next_earnings_date": "2026-07-22"
     },
-    "fetched_at": "2026-05-27T16:21:34.293577+00:00",
+    "fetched_at": "2026-07-15T16:22:17.633573+00:00",
     "metrics": {
       "analyst_count": 53.0,
-      "beta": 1.267,
-      "current_price": 390.87,
+      "beta": 1.247,
+      "current_price": 372.32,
       "current_ratio": 1.922,
       "debt_to_equity": 20.026,
-      "dividend_yield": 0.23,
+      "dividend_yield": 0.24,
       "earnings_growth": 0.82,
-      "eps_revision_balance": 210.0,
-      "ev_to_ebitda": 29.016,
-      "forward_pe": 27.004267,
+      "eps_revision_balance": -2.0,
+      "ev_to_ebitda": 26.81,
+      "forward_pe": 25.51566,
       "free_cashflow": 27921750016.0,
-      "market_cap": 4735563202560.0,
+      "market_cap": 4543017910272.0,
       "operating_cashflow": 174353006592.0,
       "operating_margin": 0.36121,
       "payout_ratio": 0.0641,
-      "price_to_book": 9.891937,
-      "price_to_sales": 11.208487,
+      "price_to_book": 9.421977,
+      "price_to_sales": 10.753334,
       "profit_margin": 0.37919,
       "recommendation_mean": 1.4375,
       "revenue_growth": 0.218,
       "roe": 0.38884997,
-      "target_mean_price": 429.11566,
-      "trailing_pe": 29.814646
+      "target_mean_price": 431.7213,
+      "trailing_pe": 28.376524
     },
     "provider": "yfinance",
     "source_symbol": "GOOGL",
@@ -898,6 +934,42 @@
     "provider": "yfinance",
     "source_symbol": "UNH",
     "symbol": "UNH"
+  },
+  "yfinance:V": {
+    "error": null,
+    "events": {
+      "latest_quarter": null,
+      "next_earnings_date": "2026-07-28"
+    },
+    "fetched_at": "2026-07-15T16:22:19.390112+00:00",
+    "metrics": {
+      "analyst_count": 38.0,
+      "beta": 0.754,
+      "current_price": 358.3283,
+      "current_ratio": 1.088,
+      "debt_to_equity": 67.233,
+      "dividend_yield": 0.75,
+      "earnings_growth": 0.355,
+      "eps_revision_balance": 23.0,
+      "ev_to_ebitda": 22.609,
+      "forward_pe": 24.102016,
+      "free_cashflow": 20839749632.0,
+      "market_cap": 681448636416.0,
+      "operating_cashflow": 22755999744.0,
+      "operating_margin": 0.67346,
+      "payout_ratio": 0.2197,
+      "price_to_book": 19.22156,
+      "price_to_sales": 15.837698,
+      "profit_margin": 0.51679003,
+      "recommendation_mean": 1.36585,
+      "revenue_growth": 0.171,
+      "roe": 0.60349,
+      "target_mean_price": 401.15817,
+      "trailing_pe": 31.26774
+    },
+    "provider": "yfinance",
+    "source_symbol": "V",
+    "symbol": "V"
   },
   "yfinance:WMT": {
     "error": null,
